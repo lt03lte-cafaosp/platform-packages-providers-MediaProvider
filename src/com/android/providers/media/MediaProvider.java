@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2006 The Android Open Source Project
+ * Copyright (c) 2009, Code Aurora Forum. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -213,10 +214,16 @@ public class MediaProvider extends ContentProvider {
         iFilter.addDataScheme("file");
         getContext().registerReceiver(mUnmountReceiver, iFilter);
 
-        // open external database if external storage is mounted
+        /**
+         *  Open external database if either external storage is mounted
+         *  or /data/media folder exists.
+         */
         String state = Environment.getExternalStorageState();
+        File mediaDir = new File(Environment.getDataDirectory() +
+                                 "/media");
         if (Environment.MEDIA_MOUNTED.equals(state) ||
-                Environment.MEDIA_MOUNTED_READ_ONLY.equals(state)) {
+                Environment.MEDIA_MOUNTED_READ_ONLY.equals(state) ||
+                mediaDir.isDirectory()) {
             attachVolume(EXTERNAL_VOLUME);
         }
 
@@ -1993,7 +2000,20 @@ public class MediaProvider extends ContentProvider {
     private DatabaseHelper getDatabaseForUri(Uri uri) {
         synchronized (mDatabases) {
             if (uri.getPathSegments().size() > 1) {
-                return mDatabases.get(uri.getPathSegments().get(0));
+                String dbKey = uri.getPathSegments().get(0);
+                /*
+                 * For external uri, if the sdcard is mounted,
+                 * the dbKey would be external-<fatVolumeId>.
+                 * Otherwise, the dbKey would be external-ffffff.
+                 * Information related to media files on /data/media
+                 * is stored in external-ffffff.db.
+                 */
+                if (dbKey.equals(EXTERNAL_VOLUME)) {
+                    String path = Environment.getExternalStorageDirectory().getPath();
+                    int volumeId = FileUtils.getFatVolumeId(path);
+                    dbKey = EXTERNAL_VOLUME + "-" + Integer.toHexString(volumeId);
+                }
+                return mDatabases.get(dbKey);
             }
         }
         return null;
@@ -2014,6 +2034,7 @@ public class MediaProvider extends ContentProvider {
         }
 
         synchronized (mDatabases) {
+            String dbName = volume;
             if (mDatabases.get(volume) != null) {  // Already attached
                 return Uri.parse("content://media/" + volume);
             }
@@ -2026,14 +2047,15 @@ public class MediaProvider extends ContentProvider {
                 int volumeID = FileUtils.getFatVolumeId(path);
                 if (LOCAL_LOGV) Log.v(TAG, path + " volume ID: " + volumeID);
 
-                // generate database name based on volume ID
-                String dbName = "external-" + Integer.toHexString(volumeID) + ".db";
-                db = new DatabaseHelper(getContext(), dbName, false);
+                // generate database name based on volume name and volume ID
+                dbName = EXTERNAL_VOLUME + "-" + Integer.toHexString(volumeID);
+                db = new DatabaseHelper(getContext(), dbName + ".db", false);
             } else {
                 throw new IllegalArgumentException("There is no volume named " + volume);
             }
 
-            mDatabases.put(volume, db);
+            // dbName is the key for the database handle
+            mDatabases.put(dbName, db);
 
             if (!db.mInternal) {
                 // clean up stray album art files: delete every file not in the database
