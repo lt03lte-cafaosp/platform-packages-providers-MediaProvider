@@ -15,6 +15,6 @@
 -->
 <resources xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
-    <string name="uid_label">"미디어"</string>
-    <string name="app_label">"Media Storage"</string>
+    <string name="uid_label">"Medier"</string>
+    <string name="app_label">"Medielagring"</string>
 </resources>
