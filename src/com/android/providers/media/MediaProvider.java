@@ -52,6 +52,7 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.UnsupportedEncodingException;
 import java.text.Collator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -107,6 +108,7 @@ public class MediaProvider extends ContentProvider {
             "data1",
             "data2",
     };
+    // If this array gets changed, please update the constant below to point to the correct item.
     private String[] mSearchColsBasic = new String[] {
             android.provider.BaseColumns._ID,
             MediaStore.Audio.Media.MIME_TYPE,
@@ -116,10 +118,14 @@ public class MediaProvider extends ContentProvider {
             ") AS " + SearchManager.SUGGEST_COLUMN_ICON_1,
             "text1 AS " + SearchManager.SUGGEST_COLUMN_TEXT_1,
             "text1 AS " + SearchManager.SUGGEST_COLUMN_QUERY,
-            "CASE WHEN text2!='" + MediaFile.UNKNOWN_STRING + "' THEN text2 ELSE NULL END AS " +
-                SearchManager.SUGGEST_COLUMN_TEXT_2,
+            "(CASE WHEN grouporder=1 THEN '%1'" +  // %1 gets replaced with localized string.
+            " ELSE CASE WHEN grouporder=3 THEN artist || ' - ' || album" +
+            " ELSE CASE WHEN text2!='" + MediaFile.UNKNOWN_STRING + "' THEN text2" +
+            " ELSE NULL END END END) AS " + SearchManager.SUGGEST_COLUMN_TEXT_2,
             SearchManager.SUGGEST_COLUMN_INTENT_DATA
     };
+    // Position of the TEXT_2 item in the above array.
+    private final int SEARCH_COLUMN_BASIC_TEXT2 = 5;
 
     private BroadcastReceiver mUnmountReceiver = new BroadcastReceiver() {
         @Override
@@ -255,6 +261,9 @@ public class MediaProvider extends ContentProvider {
         sArtistAlbumsMap.put(MediaStore.Audio.Albums.ALBUM_ART, "album_art._data AS " +
                 MediaStore.Audio.Albums.ALBUM_ART);
 
+        mSearchColsBasic[SEARCH_COLUMN_BASIC_TEXT2] =
+                mSearchColsBasic[SEARCH_COLUMN_BASIC_TEXT2].replaceAll(
+                        "%1", getContext().getString(R.string.artist_label));
         mDatabases = new HashMap<String, DatabaseHelper>();
         attachVolume(INTERNAL_VOLUME);
 
@@ -703,6 +712,20 @@ public class MediaProvider extends ContentProvider {
             // distinguish same-named albums.
             db.execSQL("UPDATE audio_meta SET date_modified=0;");
             db.execSQL("DELETE FROM albums");
+        }
+
+        if (fromVersion < 76) {
+            // We now ignore double quotes when building the key, so we have to remove all of them
+            // from existing keys.
+            db.execSQL("UPDATE audio_meta SET title_key=" +
+                    "REPLACE(title_key,x'081D08C29F081D',x'081D') " +
+                    "WHERE title_key LIKE '%'||x'081D08C29F081D'||'%';");
+            db.execSQL("UPDATE albums SET album_key=" +
+                    "REPLACE(album_key,x'081D08C29F081D',x'081D') " +
+                    "WHERE album_key LIKE '%'||x'081D08C29F081D'||'%';");
+            db.execSQL("UPDATE artists SET artist_key=" +
+                    "REPLACE(artist_key,x'081D08C29F081D',x'081D') " +
+                    "WHERE artist_key LIKE '%'||x'081D08C29F081D'||'%';");
         }
     }
 
@@ -1253,11 +1276,12 @@ public class MediaProvider extends ContentProvider {
                     Long temp = artistCache.get(s);
                     if (temp == null) {
                         artistRowId = getKeyIdForName(db, "artists", "artist_key", "artist",
-                                s, s, path, 0, artistCache, uri);
+                                s, s, path, 0, null, artistCache, uri);
                     } else {
                         artistRowId = temp.longValue();
                     }
                 }
+                String artist = s;
 
                 // Do the same for the album field
                 so = values.get("album");
@@ -1271,7 +1295,7 @@ public class MediaProvider extends ContentProvider {
                     Long temp = albumCache.get(cacheName);
                     if (temp == null) {
                         albumRowId = getKeyIdForName(db, "albums", "album_key", "album",
-                                s, cacheName, path, albumhash, albumCache, uri);
+                                s, cacheName, path, albumhash, artist, albumCache, uri);
                     } else {
                         albumRowId = temp;
                     }
@@ -1282,6 +1306,10 @@ public class MediaProvider extends ContentProvider {
                 so = values.getAsString("title");
                 s = (so == null ? "" : so.toString());
                 values.put("title_key", MediaStore.Audio.keyFor(s));
+                // do a final trim of the title, in case it started with the special
+                // "sort first" character (ascii \001)
+                values.remove("title");
+                values.put("title", s.trim());
 
                 computeDisplayName(values.getAsString("_data"), values);
                 values.put(MediaStore.MediaColumns.DATE_ADDED, System.currentTimeMillis() / 1000);
@@ -1623,17 +1651,16 @@ public class MediaProvider extends ContentProvider {
                         ContentValues values = new ContentValues(initialValues);
                         // Insert the artist into the artist table and remove it from
                         // the input values
-                        String so = values.getAsString("artist");
-                        if (so != null) {
-                            String s = so.toString();
+                        String artist = values.getAsString("artist");
+                        if (artist != null) {
                             values.remove("artist");
                             long artistRowId;
                             HashMap<String, Long> artistCache = database.mArtistCache;
                             synchronized(artistCache) {
-                                Long temp = artistCache.get(s);
+                                Long temp = artistCache.get(artist);
                                 if (temp == null) {
                                     artistRowId = getKeyIdForName(db, "artists", "artist_key", "artist",
-                                            s, s, null, 0, artistCache, uri);
+                                            artist, artist, null, 0, null, artistCache, uri);
                                 } else {
                                     artistRowId = temp.longValue();
                                 }
@@ -1642,7 +1669,7 @@ public class MediaProvider extends ContentProvider {
                         }
 
                         // Do the same for the album field.
-                        so = values.getAsString("album");
+                        String so = values.getAsString("album");
                         if (so != null) {
                             String path = values.getAsString("_data");
                             int albumHash = 0;
@@ -1661,7 +1688,7 @@ public class MediaProvider extends ContentProvider {
                                 Long temp = albumCache.get(cacheName);
                                 if (temp == null) {
                                     albumRowId = getKeyIdForName(db, "albums", "album_key", "album",
-                                            s, cacheName, path, albumHash, albumCache, uri);
+                                            s, cacheName, path, albumHash, artist, albumCache, uri);
                                 } else {
                                     albumRowId = temp.longValue();
                                 }
@@ -1758,7 +1785,6 @@ public class MediaProvider extends ContentProvider {
 
         Worker(String name) {
             Thread t = new Thread(null, this, name);
-            t.setPriority(Thread.MIN_PRIORITY);
             t.start();
             synchronized (mLock) {
                 while (mLooper == null) {
@@ -1776,6 +1802,7 @@ public class MediaProvider extends ContentProvider {
 
         public void run() {
             synchronized (mLock) {
+                Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
                 Looper.prepare();
                 mLooper = Looper.myLooper();
                 mLock.notifyAll();
@@ -1996,6 +2023,7 @@ public class MediaProvider extends ContentProvider {
      * @param cacheName The string that will be inserted in to the cache
      * @param path      The full path to the file being inserted in to the audio table
      * @param albumHash A hash to distinguish between different albums of the same name
+     * @param artist    The name of the artist, if known
      * @param cache     The cache to add this entry to
      * @param srcuri    The Uri that prompted the call to this method, used for determining whether this is
      *                  the internal or external database
@@ -2003,7 +2031,7 @@ public class MediaProvider extends ContentProvider {
      */
     private long getKeyIdForName(SQLiteDatabase db, String table, String keyField, String nameField,
             String rawName, String cacheName, String path, int albumHash,
-            HashMap<String, Long> cache, Uri srcuri) {
+            String artist, HashMap<String, Long> cache, Uri srcuri) {
         long rowId;
 
         if (rawName == null || rawName.length() == 0) {
@@ -2024,8 +2052,11 @@ public class MediaProvider extends ContentProvider {
         // folder, but this is a quick and easy start that works immediately
         // without requiring support from the mp3, mp4 and Ogg meta data
         // readers, as long as the albums are in different folders.
-        if (isAlbum && ! isUnknown) {
+        if (isAlbum) {
             k = k + albumHash;
+            if (isUnknown) {
+                k = k + artist;
+            }
         }
 
         String [] selargs = { k };
@@ -2273,7 +2304,7 @@ public class MediaProvider extends ContentProvider {
 
     private static String TAG = "MediaProvider";
     private static final boolean LOCAL_LOGV = true;
-    private static final int DATABASE_VERSION = 75;
+    private static final int DATABASE_VERSION = 76;
     private static final String INTERNAL_DATABASE_NAME = "internal.db";
 
     // maximum number of cached external databases to keep
