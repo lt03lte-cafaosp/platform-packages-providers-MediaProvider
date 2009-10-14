@@ -200,7 +200,13 @@ public class MediaProvider extends ContentProvider {
             // touch the database file to show it is most recently used
             File file = new File(db.getPath());
             long now = System.currentTimeMillis();
-            file.setLastModified(now);
+	    try{
+		file.setLastModified(now);
+	    }
+	    catch(IllegalArgumentException e) {
+		//Ignore the exception, this would need to be fixed later.
+		Log.e(TAG,"System.currentTimeMillis() returned negative value");
+	    }
 
             // delete least recently used databases if we are over the limit
             String[] databases = mContext.databaseList();
