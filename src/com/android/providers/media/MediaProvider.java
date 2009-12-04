@@ -56,6 +56,7 @@ import java.io.UnsupportedEncodingException;
 import java.text.Collator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Set;
 import java.util.Iterator;
 import java.util.Stack;
 
@@ -2209,6 +2210,7 @@ public class MediaProvider extends ContentProvider {
 
         synchronized (mDatabases) {
             String dbName = volume;
+            Set <String> keyset = mDatabases.keySet();
             if (mDatabases.get(volume) != null) {  // Already attached
                 return Uri.parse("content://media/" + volume);
             }
@@ -2223,6 +2225,10 @@ public class MediaProvider extends ContentProvider {
 
                 // generate database name based on volume name and volume ID
                 dbName = EXTERNAL_VOLUME + "-" + Integer.toHexString(volumeID);
+                if(keyset.contains(dbName)) {
+                    if (LOCAL_LOGV) Log.v(TAG,"key exists"); //Already attached
+                    return Uri.parse("content://media/" + volume);
+                }
                 db = new DatabaseHelper(getContext(), dbName + ".db", false);
             } else {
                 throw new IllegalArgumentException("There is no volume named " + volume);
@@ -2287,8 +2293,15 @@ public class MediaProvider extends ContentProvider {
         }
 
         synchronized (mDatabases) {
-            DatabaseHelper database = mDatabases.get(volume);
-            if (database == null) return;
+            Set <String> keyset = mDatabases.keySet();
+            if (LOCAL_LOGV) Log.v(TAG, "keyset= " + keyset);
+            Iterator <String> it = keyset.iterator();
+            while(it.hasNext()) {
+                String dbkeyname = it.next();
+                if (LOCAL_LOGV) Log.v(TAG, "iterator: " + dbkeyname);
+                if(dbkeyname.startsWith(volume)) {
+                    DatabaseHelper database = mDatabases.get(dbkeyname);
+                    if (database == null) return;
 
             try {
                 // touch the database file to show it is most recently used
@@ -2298,8 +2311,11 @@ public class MediaProvider extends ContentProvider {
                 Log.e(TAG, "Can't touch database file", e);
             }
 
-            mDatabases.remove(volume);
-            database.close();
+                    mDatabases.remove(volume);
+                    database.close();
+                    break;
+                }
+            }
         }
 
         getContext().getContentResolver().notifyChange(uri, null);
