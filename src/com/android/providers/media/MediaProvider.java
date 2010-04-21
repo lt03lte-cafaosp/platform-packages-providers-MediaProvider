@@ -2637,6 +2637,16 @@ public class MediaProvider extends ContentProvider {
         }
 
         String volume = uri.getPathSegments().get(0);
+        /*
+         * Database for sdcard and USB mass storage are different, for sdcard
+         * the database name is external-<fat-volume-id> and for USB its
+         * external-<hex -1>. Get the database name before closing the database
+         */
+
+        String path = Environment.getExternalStorageDirectory().getPath();
+        int volumeID = FileUtils.getFatVolumeId(path);
+        String dbName = volume + "-" + Integer.toHexString(volumeID);
+
         if (INTERNAL_VOLUME.equals(volume)) {
             throw new UnsupportedOperationException(
                     "Deleting the internal volume is not allowed");
@@ -2646,7 +2656,10 @@ public class MediaProvider extends ContentProvider {
         }
 
         synchronized (mDatabases) {
-            DatabaseHelper database = mDatabases.get(volume);
+            /*
+             * Get the database based on the database name not the volume
+             */
+            DatabaseHelper database = mDatabases.get(dbName);
             if (database == null) return;
 
             try {
@@ -2656,8 +2669,8 @@ public class MediaProvider extends ContentProvider {
             } catch (SQLException e) {
                 Log.e(TAG, "Can't touch database file", e);
             }
-
-            mDatabases.remove(volume);
+            // Remove the appropriate database
+            mDatabases.remove(dbName);
             database.close();
         }
 

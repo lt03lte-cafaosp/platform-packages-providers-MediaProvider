@@ -49,6 +49,7 @@ import java.util.Locale;
 public class MediaScannerService extends Service implements Runnable
 {
     private static final String TAG = "MediaScannerService";
+    private static final String usbMountPath = "/disk/media";
 
     private volatile Looper mServiceLooper;
     private volatile ServiceHandler mServiceHandler;
@@ -292,6 +293,29 @@ public class MediaScannerService extends Service implements Runnable
                             }
                         } else {
                             Log.d(TAG, "Directory not found: /data/media");
+                        }
+                    }
+                    /*
+                     * Scan /data/disk/media now for any media content,
+                     * since when USB is connected its mounted by default
+                     * in /data/disk/media
+                     */
+                    if (MediaProvider.INTERNAL_VOLUME.equals(volume)) {
+                        File mediaDir = new File(Environment.getDataDirectory() +
+                                                 usbMountPath);
+                        if (mediaDir.isDirectory()) {
+                            directories = new String[] {
+                                        Environment.getDataDirectory() + usbMountPath
+                                        };
+                            if (Config.LOGD) {
+                                Log.d(TAG, "start scanning /data/disk/media");
+                            }
+                            scan(directories, MediaProvider.EXTERNAL_VOLUME);
+                            if (Config.LOGD) {
+                                Log.d(TAG, "done scanning /data/disk/media");
+                            }
+                        } else {
+                            Log.d(TAG, "Directory not found: /data/disk/media");
                         }
                     }
                 }
