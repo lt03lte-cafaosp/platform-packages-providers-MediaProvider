@@ -3088,8 +3088,10 @@ public class MediaProvider extends ContentProvider {
                     int volumeID = FileUtils.getFatVolumeId(path);
                     if (LOCAL_LOGV) Log.v(TAG, path + " volume ID: " + volumeID);
 
+                    //We expect the dbKey to be in the format of external-fffffff
+                    dbKey = EXTERNAL_VOLUME + "-" + Integer.toHexString(volumeID);
                     // generate database name based on volume ID
-                    String dbName = "external-" + Integer.toHexString(volumeID) + ".db";
+                    String dbName = dbKey + ".db";
                     db = new DatabaseHelper(context, dbName, false);
                     mVolumeId = volumeID;
                 } else {
