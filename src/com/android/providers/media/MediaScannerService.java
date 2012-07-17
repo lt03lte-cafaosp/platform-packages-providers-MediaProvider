@@ -106,7 +106,11 @@ public class MediaScannerService extends Service implements Runnable
             Log.e(TAG, "exception in MediaScanner.scan()", e);
         }
 
-        getContentResolver().delete(scanUri, null, null);
+        try {
+            getContentResolver().delete(scanUri, null, null);
+        } catch (Exception e) {
+            Log.e(TAG, "exception in getContentResolver().delete()", e);
+        }
 
         sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_FINISHED, uri));
         mWakeLock.release();
