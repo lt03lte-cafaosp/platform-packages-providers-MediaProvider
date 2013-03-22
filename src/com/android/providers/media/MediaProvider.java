@@ -235,7 +235,7 @@ public class MediaProvider extends ContentProvider {
                         StorageVolume.EXTRA_STORAGE_VOLUME);
                 // If primary external storage is ejected, then remove the external volume
                 // notify all cursors backed by data on that volume.
-                if (storage.getPath().equals(mExternalStoragePaths[0])) {
+                if (storage.getPath().equals(mExternalStoragePaths[1])) {
                     detachVolume(Uri.parse("content://media/external"));
                     sFolderArtMap.clear();
                     MiniThumbFile.reset();
@@ -575,9 +575,12 @@ public class MediaProvider extends ContentProvider {
 
         // open external database if external storage is mounted
         String state = Environment.getExternalStorageState();
-        if (Environment.MEDIA_MOUNTED.equals(state) ||
-                Environment.MEDIA_MOUNTED_READ_ONLY.equals(state)) {
-            attachVolume(EXTERNAL_VOLUME);
+        String phoneStorageState = Environment.getInternalStorageState();
+        if (Environment.MEDIA_MOUNTED.equals(state) || 
+            Environment.MEDIA_MOUNTED_READ_ONLY.equals(state)||
+			Environment.MEDIA_MOUNTED.equals(phoneStorageState) || 
+			Environment.MEDIA_MOUNTED_READ_ONLY.equals(phoneStorageState)) {
+                attachVolume(EXTERNAL_VOLUME);
         }
 
         HandlerThread ht = new HandlerThread("thumbs thread", Process.THREAD_PRIORITY_BACKGROUND);
@@ -1749,6 +1752,15 @@ public class MediaProvider extends ContentProvider {
         if (fromVersion < 511) {
             // we update _data in version 510, we need to update the bucket_id as well
             updateBucketNames(db);
+            db.execSQL("CREATE TABLE IF NOT EXISTS Bookmark(" +
+                " _id INTEGER PRIMARY KEY," +
+                " _data TEXT," +
+                " _display_name TEXT," +
+                " position INTEGER," +
+                " date_added INTEGER," +
+                " mime_type TEXT," +
+                " media_type TEXT" +
+                ");");			
         }
 
         sanityCheck(db, fromVersion);
@@ -2432,6 +2444,13 @@ public class MediaProvider extends ContentProvider {
                 int handle = Integer.parseInt(uri.getPathSegments().get(2));
                 return getObjectReferences(helper, db, handle);
 
+            case MEDIA_BOOKMARK:
+                qb.setTables("bookmark");
+                break;
+            case MEDIA_BOOKMARK_ID:
+                qb.setTables("bookmark");
+                qb.appendWhere("_id = " + uri.getPathSegments().get(2));
+                break;
             default:
                 throw new IllegalStateException("Unknown URL: " + uri.toString());
         }
@@ -3411,6 +3430,13 @@ public class MediaProvider extends ContentProvider {
                 }
                 break;
 
+            case MEDIA_BOOKMARK:
+                rowId = db.insert("bookmark", "mime_type", initialValues);
+                if (rowId > 0) {
+                    newUri = ContentUris.withAppendedId(uri, rowId);
+                }
+                break;
+                
             default:
                 throw new UnsupportedOperationException("Invalid URI " + uri);
         }
@@ -3733,6 +3759,12 @@ public class MediaProvider extends ContentProvider {
                 out.table = "files";
                 break;
 
+            case MEDIA_BOOKMARK_ID:
+                where = "_id=" + uri.getPathSegments().get(2);
+                // fall through
+            case MEDIA_BOOKMARK:
+                out.table = "bookmark";
+                break;
             default:
                 throw new UnsupportedOperationException(
                         "Unknown or unsupported URL: " + uri.toString());
@@ -4941,7 +4973,9 @@ public class MediaProvider extends ContentProvider {
                 helper = new DatabaseHelper(context, INTERNAL_DATABASE_NAME, true,
                         false, mObjectRemovedCallback);
             } else if (EXTERNAL_VOLUME.equals(volume)) {
-                if (Environment.isExternalStorageRemovable()) {
+                /*HMCT:need to scan InternalStorage if SD card is not mounted
+                /*so delete below code
+                /*if ( Environment.isExternalStorageRemovable()) {
                     String path = mExternalStoragePaths[0];
                     int volumeID = FileUtils.getFatVolumeId(path);
                     if (LOCAL_LOGV) Log.v(TAG, path + " volume ID: " + volumeID);
@@ -4974,7 +5008,8 @@ public class MediaProvider extends ContentProvider {
                     helper = new DatabaseHelper(context, dbName, false,
                             false, mObjectRemovedCallback);
                     mVolumeId = volumeID;
-                } else {
+                } else */
+                {
                     // external database name should be EXTERNAL_DATABASE_NAME
                     // however earlier releases used the external-XXXXXXXX.db naming
                     // for devices without removable storage, and in that case we need to convert
@@ -5185,6 +5220,8 @@ public class MediaProvider extends ContentProvider {
     // UsbReceiver calls insert() and delete() with this URI to tell us
     // when MTP is connected and disconnected
     private static final int MTP_CONNECTED = 705;
+    private static final int MEDIA_BOOKMARK = 1101;
+    private static final int MEDIA_BOOKMARK_ID = 1102;
 
     private static final UriMatcher URI_MATCHER =
             new UriMatcher(UriMatcher.NO_MATCH);
@@ -5283,6 +5320,8 @@ public class MediaProvider extends ContentProvider {
         // used by the music app's search activity
         URI_MATCHER.addURI("media", "*/audio/search/fancy", AUDIO_SEARCH_FANCY);
         URI_MATCHER.addURI("media", "*/audio/search/fancy/*", AUDIO_SEARCH_FANCY);
+        URI_MATCHER.addURI("media", "*/bookmark", MEDIA_BOOKMARK);
+        URI_MATCHER.addURI("media", "*/bookmark/#", MEDIA_BOOKMARK_ID);
     }
 
     @Override
