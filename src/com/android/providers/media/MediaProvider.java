@@ -2457,8 +2457,13 @@ public class MediaProvider extends ContentProvider {
 
         // Log.v(TAG, "query = "+ qb.buildQuery(projectionIn, selection,
         //        combine(prependArgs, selectionArgs), groupBy, null, sort, limit));
-        Cursor c = qb.query(db, projectionIn, selection,
-                combine(prependArgs, selectionArgs), groupBy, null, sort, limit);
+        Cursor c = null;
+        try {
+            c = qb.query(db, projectionIn, selection,
+                     combine(prependArgs, selectionArgs), groupBy, null, sort, limit);
+        } catch (IllegalStateException e) {
+            Log.e(TAG, "query: IllegalStateException! uri=" + uri, e);
+        }
 
         if (c != null) {
             c.setNotificationUri(getContext().getContentResolver(), uri);
@@ -3038,6 +3043,9 @@ public class MediaProvider extends ContentProvider {
             if (storage == null) {
                 int storageId = getStorageId(path);
                 values.put(FileColumns.STORAGE_ID, storageId);
+            }
+            if (mediaType == FileColumns.MEDIA_TYPE_PLAYLIST) {
+                values.put(FileColumns.STORAGE_ID, 0);
             }
 
             helper.mNumInserts++;
