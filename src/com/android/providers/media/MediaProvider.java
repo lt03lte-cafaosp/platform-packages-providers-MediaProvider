@@ -235,7 +235,8 @@ public class MediaProvider extends ContentProvider {
                         StorageVolume.EXTRA_STORAGE_VOLUME);
                 // If primary external storage is ejected, then remove the external volume
                 // notify all cursors backed by data on that volume.
-                if (storage.getPath().equals(mExternalStoragePaths[1])) {
+                String internalStoragePath = Environment.getInternalStorageDirectory().getPath();
+                if (storage.getPath().equals(internalStoragePath)) {
                     detachVolume(Uri.parse("content://media/external"));
                     sFolderArtMap.clear();
                     MiniThumbFile.reset();
