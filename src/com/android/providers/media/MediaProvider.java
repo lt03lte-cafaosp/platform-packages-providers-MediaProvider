@@ -309,7 +309,7 @@ public class MediaProvider extends ContentProvider {
             // do nothing if the operation originated from MTP
             if (mDisableMtpObjectCallbacks) return;
 
-            Log.d(TAG, "object removed " + args[0]);
+            //Log.d(TAG, "object removed " + args[0]);
             IMtpService mtpService = mMtpService;
             if (mtpService != null) {
                 try {
