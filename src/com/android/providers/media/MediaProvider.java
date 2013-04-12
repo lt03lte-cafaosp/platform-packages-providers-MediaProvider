@@ -46,6 +46,8 @@ import android.database.MatrixCursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.database.sqlite.SQLiteQueryBuilder;
+import android.database.sqlite.SQLiteDiskIOException;
+
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.media.MediaFile;
@@ -579,8 +581,8 @@ public class MediaProvider extends ContentProvider {
         String phoneStorageState = Environment.getInternalStorageState();
         if (Environment.MEDIA_MOUNTED.equals(state) || 
             Environment.MEDIA_MOUNTED_READ_ONLY.equals(state)||
-			Environment.MEDIA_MOUNTED.equals(phoneStorageState) || 
-			Environment.MEDIA_MOUNTED_READ_ONLY.equals(phoneStorageState)) {
+            Environment.MEDIA_MOUNTED.equals(phoneStorageState) || 
+            Environment.MEDIA_MOUNTED_READ_ONLY.equals(phoneStorageState)) {
                 attachVolume(EXTERNAL_VOLUME);
         }
 
@@ -2464,6 +2466,8 @@ public class MediaProvider extends ContentProvider {
                      combine(prependArgs, selectionArgs), groupBy, null, sort, limit);
         } catch (IllegalStateException e) {
             Log.e(TAG, "query: IllegalStateException! uri=" + uri, e);
+        } catch (SQLiteDiskIOException e){
+            Log.e(TAG, "query: SQLiteDiskIOException! uri=" + uri, e);
         }
 
         if (c != null) {
