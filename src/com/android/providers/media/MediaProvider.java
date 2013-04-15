@@ -44,6 +44,7 @@ import android.database.Cursor;
 import android.database.DatabaseUtils;
 import android.database.MatrixCursor;
 import android.database.sqlite.SQLiteDatabase;
+import android.database.sqlite.SQLiteException;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.database.sqlite.SQLiteQueryBuilder;
 import android.database.sqlite.SQLiteDiskIOException;
@@ -237,6 +238,7 @@ public class MediaProvider extends ContentProvider {
                         StorageVolume.EXTRA_STORAGE_VOLUME);
                 // If primary external storage is ejected, then remove the external volume
                 // notify all cursors backed by data on that volume.
+                if(storage ==null)return;//qinwendong add avoid nullpointer
                 String internalStoragePath = Environment.getInternalStorageDirectory().getPath();
                 if (storage.getPath().equals(internalStoragePath)) {
                     detachVolume(Uri.parse("content://media/external"));
@@ -386,6 +388,8 @@ public class MediaProvider extends ContentProvider {
                 if (!mUpgradeAttempted) {
                     Log.e(TAG, "failed to open database " + mName, e);
                     return null;
+                } else {
+                    Log.e(TAG, "DatabaseHelper: failed to open database " + mName, e);
                 }
             }
 
@@ -393,6 +397,7 @@ public class MediaProvider extends ContentProvider {
             // This will result in the creation of a fresh database, which will be repopulated
             // when the media scanner runs.
             if (result == null && mUpgradeAttempted) {
+                Log.e(TAG, "DatabaseHelper: delete database " + mName);
                 mContext.getDatabasePath(mName).delete();
                 result = super.getWritableDatabase();
             }
@@ -428,6 +433,17 @@ public class MediaProvider extends ContentProvider {
             // delete least recently used databases if we are over the limit
             String[] databases = mContext.databaseList();
             int count = databases.length;
+            // HMCT begin: Do not delete .db-shm and .db-wal files directly since the corresponding .db
+            // file may not be deleted. And that will cause a SQliteDiskIOException. 
+            List<String> dbList = new ArrayList<String>();
+            for (int i = 0; i < count; i++) {
+                if (databases[i].endsWith(".db")) {
+                    dbList.add(databases[i]);
+                }
+            }
+            databases = dbList.toArray(new String[0]);
+            count = databases.length;
+            // HMCT end
             int limit = MAX_EXTERNAL_DATABASES;
 
             // delete external databases that have not been used in the past two months
@@ -486,12 +502,14 @@ public class MediaProvider extends ContentProvider {
     private final ServiceConnection mMtpServiceConnection = new ServiceConnection() {
          public void onServiceConnected(ComponentName className, android.os.IBinder service) {
             synchronized (this) {
+                Log.v(TAG, "MtpService: ServiceConnection!!");
                 mMtpService = IMtpService.Stub.asInterface(service);
             }
         }
 
         public void onServiceDisconnected(ComponentName className) {
             synchronized (this) {
+                Log.v(TAG, "MtpService: ServiceDisconnected!!");
                 mMtpService = null;
             }
         }
@@ -585,6 +603,7 @@ public class MediaProvider extends ContentProvider {
             Environment.MEDIA_MOUNTED_READ_ONLY.equals(phoneStorageState)) {
                 attachVolume(EXTERNAL_VOLUME);
         }
+        attachVolume(EXTERNAL_VOLUME);
 
         HandlerThread ht = new HandlerThread("thumbs thread", Process.THREAD_PRIORITY_BACKGROUND);
         ht.start();
@@ -625,6 +644,10 @@ public class MediaProvider extends ContentProvider {
                              * these problems than by catching OutOfMemoryError.
                              */
                             Log.w(TAG, err);
+                        } catch (SQLiteException ex) {
+                            Log.e(TAG, "ThumbHandler: SQLiteException!", ex);
+                        } catch (IllegalStateException ex) {
+                            Log.e(TAG, "ThumbHandler: IllegalStateException!", ex);
                         } finally {
                             synchronized (mCurrentThumbRequest) {
                                 mCurrentThumbRequest.mState = MediaThumbRequest.State.DONE;
@@ -637,10 +660,20 @@ public class MediaProvider extends ContentProvider {
                     synchronized (mThumbRequestStack) {
                         d = (ThumbData)mThumbRequestStack.pop();
                     }
-
-                    makeThumbInternal(d);
-                    synchronized (mPendingThumbs) {
-                        mPendingThumbs.remove(d.path);
+                    try {
+                        makeThumbInternal(d);
+                    } catch (UnsupportedOperationException ex) {
+                        // This could happen if we unplug the sd card during insert/update/delete
+                        // See getDatabaseForUri.
+                        Log.e(TAG, "ThumbHandler: UnsupportedOperationException", ex);
+                    } catch (SQLiteException ex) {
+                        Log.e(TAG, "ThumbHandler: SQLiteException", ex);
+                    } catch (IllegalStateException ex) {
+                        Log.e(TAG, "ThumbHandler: IllegalStateException", ex);
+                    } finally {
+                        synchronized (mPendingThumbs) {
+                            mPendingThumbs.remove(d.path);
+                        }
                     }
                 }
             }
@@ -1865,22 +1898,26 @@ public class MediaProvider extends ContentProvider {
             String[] columns = {BaseColumns._ID, MediaColumns.DATA, MediaColumns.DISPLAY_NAME};
             Cursor cursor = db.query(tableName, columns, null, null, null, null, null);
             try {
-                final int idColumnIndex = cursor.getColumnIndex(BaseColumns._ID);
-                final int dataColumnIndex = cursor.getColumnIndex(MediaColumns.DATA);
-                final int displayNameIndex = cursor.getColumnIndex(MediaColumns.DISPLAY_NAME);
-                ContentValues values = new ContentValues();
-                while (cursor.moveToNext()) {
-                    String displayName = cursor.getString(displayNameIndex);
-                    if (displayName == null) {
-                        String data = cursor.getString(dataColumnIndex);
-                        values.clear();
-                        computeDisplayName(data, values);
-                        int rowId = cursor.getInt(idColumnIndex);
-                        db.update(tableName, values, "_id=" + rowId, null);
+                if (cursor != null) {
+                    final int idColumnIndex = cursor.getColumnIndex(BaseColumns._ID);
+                    final int dataColumnIndex = cursor.getColumnIndex(MediaColumns.DATA);
+                    final int displayNameIndex = cursor.getColumnIndex(MediaColumns.DISPLAY_NAME);
+                    ContentValues values = new ContentValues();
+                    while (cursor.moveToNext()) {
+                        String displayName = cursor.getString(displayNameIndex);
+                        if (displayName == null) {
+                            String data = cursor.getString(dataColumnIndex);
+                            values.clear();
+                            computeDisplayName(data, values);
+                            int rowId = cursor.getInt(idColumnIndex);
+                            db.update(tableName, values, "_id=" + rowId, null);
+                        }
                     }
                 }
             } finally {
-                cursor.close();
+                if (cursor != null) {
+                    cursor.close();
+                }
             }
             db.setTransactionSuccessful();
         } finally {
@@ -1956,30 +1993,34 @@ public class MediaProvider extends ContentProvider {
 
         boolean result = false;
 
-        if (c.moveToFirst()) {
-            long id = c.getLong(0);
-            String path = c.getString(1);
-            long magic = c.getLong(2);
+        // HMCT: add try finally, Make sure cursor to be closed. 
+        try {
+            if (c.moveToFirst()) {
+                long id = c.getLong(0);
+                String path = c.getString(1);
+                long magic = c.getLong(2);
 
-            MediaThumbRequest req = requestMediaThumbnail(path, origUri,
-                    MediaThumbRequest.PRIORITY_HIGH, magic);
-            if (req == null) {
-                return false;
-            }
-            synchronized (req) {
-                try {
-                    while (req.mState == MediaThumbRequest.State.WAIT) {
-                        req.wait();
+                MediaThumbRequest req = requestMediaThumbnail(path, origUri,
+                        MediaThumbRequest.PRIORITY_HIGH, magic);
+                if (req == null) {
+                    return false;
+                }
+                synchronized (req) {
+                    try {
+                        while (req.mState == MediaThumbRequest.State.WAIT) {
+                            req.wait();
+                        }
+                    } catch (InterruptedException e) {
+                        Log.w(TAG, e);
                     }
-                } catch (InterruptedException e) {
-                    Log.w(TAG, e);
-                }
-                if (req.mState == MediaThumbRequest.State.DONE) {
-                    result = true;
+                    if (req.mState == MediaThumbRequest.State.DONE) {
+                        result = true;
+                    }
                 }
             }
+        } finally {
+            c.close();
         }
-        c.close();
 
         return result;
     }
