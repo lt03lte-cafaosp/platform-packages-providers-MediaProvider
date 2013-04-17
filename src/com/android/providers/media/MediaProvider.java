@@ -44,8 +44,11 @@ import android.database.Cursor;
 import android.database.DatabaseUtils;
 import android.database.MatrixCursor;
 import android.database.sqlite.SQLiteDatabase;
+import android.database.sqlite.SQLiteException;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.database.sqlite.SQLiteQueryBuilder;
+import android.database.sqlite.SQLiteDiskIOException;
+
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.media.MediaFile;
@@ -235,7 +238,9 @@ public class MediaProvider extends ContentProvider {
                         StorageVolume.EXTRA_STORAGE_VOLUME);
                 // If primary external storage is ejected, then remove the external volume
                 // notify all cursors backed by data on that volume.
-                if (storage.getPath().equals(mExternalStoragePaths[0])) {
+                if(storage ==null)return;//qinwendong add avoid nullpointer
+                String internalStoragePath = Environment.getInternalStorageDirectory().getPath();
+                if (storage.getPath().equals(internalStoragePath)) {
                     detachVolume(Uri.parse("content://media/external"));
                     sFolderArtMap.clear();
                     MiniThumbFile.reset();
@@ -308,7 +313,7 @@ public class MediaProvider extends ContentProvider {
             // do nothing if the operation originated from MTP
             if (mDisableMtpObjectCallbacks) return;
 
-            Log.d(TAG, "object removed " + args[0]);
+            //Log.d(TAG, "object removed " + args[0]);
             IMtpService mtpService = mMtpService;
             if (mtpService != null) {
                 try {
@@ -383,6 +388,8 @@ public class MediaProvider extends ContentProvider {
                 if (!mUpgradeAttempted) {
                     Log.e(TAG, "failed to open database " + mName, e);
                     return null;
+                } else {
+                    Log.e(TAG, "DatabaseHelper: failed to open database " + mName, e);
                 }
             }
 
@@ -390,6 +397,7 @@ public class MediaProvider extends ContentProvider {
             // This will result in the creation of a fresh database, which will be repopulated
             // when the media scanner runs.
             if (result == null && mUpgradeAttempted) {
+                Log.e(TAG, "DatabaseHelper: delete database " + mName);
                 mContext.getDatabasePath(mName).delete();
                 result = super.getWritableDatabase();
             }
@@ -425,6 +433,17 @@ public class MediaProvider extends ContentProvider {
             // delete least recently used databases if we are over the limit
             String[] databases = mContext.databaseList();
             int count = databases.length;
+            // HMCT begin: Do not delete .db-shm and .db-wal files directly since the corresponding .db
+            // file may not be deleted. And that will cause a SQliteDiskIOException. 
+            List<String> dbList = new ArrayList<String>();
+            for (int i = 0; i < count; i++) {
+                if (databases[i].endsWith(".db")) {
+                    dbList.add(databases[i]);
+                }
+            }
+            databases = dbList.toArray(new String[0]);
+            count = databases.length;
+            // HMCT end
             int limit = MAX_EXTERNAL_DATABASES;
 
             // delete external databases that have not been used in the past two months
@@ -483,12 +502,14 @@ public class MediaProvider extends ContentProvider {
     private final ServiceConnection mMtpServiceConnection = new ServiceConnection() {
          public void onServiceConnected(ComponentName className, android.os.IBinder service) {
             synchronized (this) {
+                Log.v(TAG, "MtpService: ServiceConnection!!");
                 mMtpService = IMtpService.Stub.asInterface(service);
             }
         }
 
         public void onServiceDisconnected(ComponentName className) {
             synchronized (this) {
+                Log.v(TAG, "MtpService: ServiceDisconnected!!");
                 mMtpService = null;
             }
         }
@@ -575,9 +596,12 @@ public class MediaProvider extends ContentProvider {
 
         // open external database if external storage is mounted
         String state = Environment.getExternalStorageState();
-        if (Environment.MEDIA_MOUNTED.equals(state) ||
-                Environment.MEDIA_MOUNTED_READ_ONLY.equals(state)) {
-            attachVolume(EXTERNAL_VOLUME);
+        String phoneStorageState = Environment.getInternalStorageState();
+        if (Environment.MEDIA_MOUNTED.equals(state) || 
+            Environment.MEDIA_MOUNTED_READ_ONLY.equals(state)||
+            Environment.MEDIA_MOUNTED.equals(phoneStorageState) || 
+            Environment.MEDIA_MOUNTED_READ_ONLY.equals(phoneStorageState)) {
+                attachVolume(EXTERNAL_VOLUME);
         }
 
         HandlerThread ht = new HandlerThread("thumbs thread", Process.THREAD_PRIORITY_BACKGROUND);
@@ -619,6 +643,10 @@ public class MediaProvider extends ContentProvider {
                              * these problems than by catching OutOfMemoryError.
                              */
                             Log.w(TAG, err);
+                        } catch (SQLiteException ex) {
+                            Log.e(TAG, "ThumbHandler: SQLiteException!", ex);
+                        } catch (IllegalStateException ex) {
+                            Log.e(TAG, "ThumbHandler: IllegalStateException!", ex);
                         } finally {
                             synchronized (mCurrentThumbRequest) {
                                 mCurrentThumbRequest.mState = MediaThumbRequest.State.DONE;
@@ -631,10 +659,20 @@ public class MediaProvider extends ContentProvider {
                     synchronized (mThumbRequestStack) {
                         d = (ThumbData)mThumbRequestStack.pop();
                     }
-
-                    makeThumbInternal(d);
-                    synchronized (mPendingThumbs) {
-                        mPendingThumbs.remove(d.path);
+                    try {
+                        makeThumbInternal(d);
+                    } catch (UnsupportedOperationException ex) {
+                        // This could happen if we unplug the sd card during insert/update/delete
+                        // See getDatabaseForUri.
+                        Log.e(TAG, "ThumbHandler: UnsupportedOperationException", ex);
+                    } catch (SQLiteException ex) {
+                        Log.e(TAG, "ThumbHandler: SQLiteException", ex);
+                    } catch (IllegalStateException ex) {
+                        Log.e(TAG, "ThumbHandler: IllegalStateException", ex);
+                    } finally {
+                        synchronized (mPendingThumbs) {
+                            mPendingThumbs.remove(d.path);
+                        }
                     }
                 }
             }
@@ -1749,6 +1787,15 @@ public class MediaProvider extends ContentProvider {
         if (fromVersion < 511) {
             // we update _data in version 510, we need to update the bucket_id as well
             updateBucketNames(db);
+            db.execSQL("CREATE TABLE IF NOT EXISTS Bookmark(" +
+                " _id INTEGER PRIMARY KEY," +
+                " _data TEXT," +
+                " _display_name TEXT," +
+                " position INTEGER," +
+                " date_added INTEGER," +
+                " mime_type TEXT," +
+                " media_type TEXT" +
+                ");");			
         }
 
         sanityCheck(db, fromVersion);
@@ -1850,22 +1897,26 @@ public class MediaProvider extends ContentProvider {
             String[] columns = {BaseColumns._ID, MediaColumns.DATA, MediaColumns.DISPLAY_NAME};
             Cursor cursor = db.query(tableName, columns, null, null, null, null, null);
             try {
-                final int idColumnIndex = cursor.getColumnIndex(BaseColumns._ID);
-                final int dataColumnIndex = cursor.getColumnIndex(MediaColumns.DATA);
-                final int displayNameIndex = cursor.getColumnIndex(MediaColumns.DISPLAY_NAME);
-                ContentValues values = new ContentValues();
-                while (cursor.moveToNext()) {
-                    String displayName = cursor.getString(displayNameIndex);
-                    if (displayName == null) {
-                        String data = cursor.getString(dataColumnIndex);
-                        values.clear();
-                        computeDisplayName(data, values);
-                        int rowId = cursor.getInt(idColumnIndex);
-                        db.update(tableName, values, "_id=" + rowId, null);
+                if (cursor != null) {
+                    final int idColumnIndex = cursor.getColumnIndex(BaseColumns._ID);
+                    final int dataColumnIndex = cursor.getColumnIndex(MediaColumns.DATA);
+                    final int displayNameIndex = cursor.getColumnIndex(MediaColumns.DISPLAY_NAME);
+                    ContentValues values = new ContentValues();
+                    while (cursor.moveToNext()) {
+                        String displayName = cursor.getString(displayNameIndex);
+                        if (displayName == null) {
+                            String data = cursor.getString(dataColumnIndex);
+                            values.clear();
+                            computeDisplayName(data, values);
+                            int rowId = cursor.getInt(idColumnIndex);
+                            db.update(tableName, values, "_id=" + rowId, null);
+                        }
                     }
                 }
             } finally {
-                cursor.close();
+                if (cursor != null) {
+                    cursor.close();
+                }
             }
             db.setTransactionSuccessful();
         } finally {
@@ -1941,30 +1992,34 @@ public class MediaProvider extends ContentProvider {
 
         boolean result = false;
 
-        if (c.moveToFirst()) {
-            long id = c.getLong(0);
-            String path = c.getString(1);
-            long magic = c.getLong(2);
+        // HMCT: add try finally, Make sure cursor to be closed. 
+        try {
+            if (c.moveToFirst()) {
+                long id = c.getLong(0);
+                String path = c.getString(1);
+                long magic = c.getLong(2);
 
-            MediaThumbRequest req = requestMediaThumbnail(path, origUri,
-                    MediaThumbRequest.PRIORITY_HIGH, magic);
-            if (req == null) {
-                return false;
-            }
-            synchronized (req) {
-                try {
-                    while (req.mState == MediaThumbRequest.State.WAIT) {
-                        req.wait();
+                MediaThumbRequest req = requestMediaThumbnail(path, origUri,
+                        MediaThumbRequest.PRIORITY_HIGH, magic);
+                if (req == null) {
+                    return false;
+                }
+                synchronized (req) {
+                    try {
+                        while (req.mState == MediaThumbRequest.State.WAIT) {
+                            req.wait();
+                        }
+                    } catch (InterruptedException e) {
+                        Log.w(TAG, e);
                     }
-                } catch (InterruptedException e) {
-                    Log.w(TAG, e);
-                }
-                if (req.mState == MediaThumbRequest.State.DONE) {
-                    result = true;
+                    if (req.mState == MediaThumbRequest.State.DONE) {
+                        result = true;
+                    }
                 }
             }
+        } finally {
+            c.close();
         }
-        c.close();
 
         return result;
     }
@@ -2432,14 +2487,28 @@ public class MediaProvider extends ContentProvider {
                 int handle = Integer.parseInt(uri.getPathSegments().get(2));
                 return getObjectReferences(helper, db, handle);
 
+            case MEDIA_BOOKMARK:
+                qb.setTables("bookmark");
+                break;
+            case MEDIA_BOOKMARK_ID:
+                qb.setTables("bookmark");
+                qb.appendWhere("_id = " + uri.getPathSegments().get(2));
+                break;
             default:
                 throw new IllegalStateException("Unknown URL: " + uri.toString());
         }
 
         // Log.v(TAG, "query = "+ qb.buildQuery(projectionIn, selection,
         //        combine(prependArgs, selectionArgs), groupBy, null, sort, limit));
-        Cursor c = qb.query(db, projectionIn, selection,
-                combine(prependArgs, selectionArgs), groupBy, null, sort, limit);
+        Cursor c = null;
+        try {
+            c = qb.query(db, projectionIn, selection,
+                     combine(prependArgs, selectionArgs), groupBy, null, sort, limit);
+        } catch (IllegalStateException e) {
+            Log.e(TAG, "query: IllegalStateException! uri=" + uri, e);
+        } catch (SQLiteDiskIOException e){
+            Log.e(TAG, "query: SQLiteDiskIOException! uri=" + uri, e);
+        }
 
         if (c != null) {
             c.setNotificationUri(getContext().getContentResolver(), uri);
@@ -3020,6 +3089,9 @@ public class MediaProvider extends ContentProvider {
                 int storageId = getStorageId(path);
                 values.put(FileColumns.STORAGE_ID, storageId);
             }
+            if (mediaType == FileColumns.MEDIA_TYPE_PLAYLIST) {
+                values.put(FileColumns.STORAGE_ID, 0);
+            }
 
             helper.mNumInserts++;
             rowId = db.insert("files", FileColumns.DATE_MODIFIED, values);
@@ -3411,6 +3483,13 @@ public class MediaProvider extends ContentProvider {
                 }
                 break;
 
+            case MEDIA_BOOKMARK:
+                rowId = db.insert("bookmark", "mime_type", initialValues);
+                if (rowId > 0) {
+                    newUri = ContentUris.withAppendedId(uri, rowId);
+                }
+                break;
+                
             default:
                 throw new UnsupportedOperationException("Invalid URI " + uri);
         }
@@ -3733,6 +3812,12 @@ public class MediaProvider extends ContentProvider {
                 out.table = "files";
                 break;
 
+            case MEDIA_BOOKMARK_ID:
+                where = "_id=" + uri.getPathSegments().get(2);
+                // fall through
+            case MEDIA_BOOKMARK:
+                out.table = "bookmark";
+                break;
             default:
                 throw new UnsupportedOperationException(
                         "Unknown or unsupported URL: " + uri.toString());
@@ -4941,7 +5026,9 @@ public class MediaProvider extends ContentProvider {
                 helper = new DatabaseHelper(context, INTERNAL_DATABASE_NAME, true,
                         false, mObjectRemovedCallback);
             } else if (EXTERNAL_VOLUME.equals(volume)) {
-                if (Environment.isExternalStorageRemovable()) {
+                /*HMCT:need to scan InternalStorage if SD card is not mounted
+                /*so delete below code
+                /*if ( Environment.isExternalStorageRemovable()) {
                     String path = mExternalStoragePaths[0];
                     int volumeID = FileUtils.getFatVolumeId(path);
                     if (LOCAL_LOGV) Log.v(TAG, path + " volume ID: " + volumeID);
@@ -4974,7 +5061,8 @@ public class MediaProvider extends ContentProvider {
                     helper = new DatabaseHelper(context, dbName, false,
                             false, mObjectRemovedCallback);
                     mVolumeId = volumeID;
-                } else {
+                } else */
+                {
                     // external database name should be EXTERNAL_DATABASE_NAME
                     // however earlier releases used the external-XXXXXXXX.db naming
                     // for devices without removable storage, and in that case we need to convert
@@ -5185,6 +5273,8 @@ public class MediaProvider extends ContentProvider {
     // UsbReceiver calls insert() and delete() with this URI to tell us
     // when MTP is connected and disconnected
     private static final int MTP_CONNECTED = 705;
+    private static final int MEDIA_BOOKMARK = 1101;
+    private static final int MEDIA_BOOKMARK_ID = 1102;
 
     private static final UriMatcher URI_MATCHER =
             new UriMatcher(UriMatcher.NO_MATCH);
@@ -5283,6 +5373,8 @@ public class MediaProvider extends ContentProvider {
         // used by the music app's search activity
         URI_MATCHER.addURI("media", "*/audio/search/fancy", AUDIO_SEARCH_FANCY);
         URI_MATCHER.addURI("media", "*/audio/search/fancy/*", AUDIO_SEARCH_FANCY);
+        URI_MATCHER.addURI("media", "*/bookmark", MEDIA_BOOKMARK);
+        URI_MATCHER.addURI("media", "*/bookmark/#", MEDIA_BOOKMARK_ID);
     }
 
     @Override
