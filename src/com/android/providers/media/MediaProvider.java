@@ -1796,7 +1796,7 @@ public class MediaProvider extends ContentProvider {
                 " date_added INTEGER," +
                 " mime_type TEXT," +
                 " media_type TEXT" +
-                ");");			
+                ");");
         }
 
         sanityCheck(db, fromVersion);
@@ -3554,7 +3554,9 @@ public class MediaProvider extends ContentProvider {
      */
     private void processRemovedNoMediaPath(final String path) {
         final DatabaseHelper helper;
-        if (path.startsWith(mExternalStoragePaths[0])) {
+        String externalStoragePath = Environment.getExternalStorageDirectory().getPath();
+        String internalStoragePath = Environment.getInternalStorageDirectory().getPath();
+        if (path.startsWith(internalStoragePath) || path.startsWith(externalStoragePath)) {
             helper = getDatabaseForUri(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI);
         } else {
             helper = getDatabaseForUri(MediaStore.Audio.Media.INTERNAL_CONTENT_URI);
