@@ -316,7 +316,14 @@ public final class RingtonePickerActivity extends AlertActivity implements
             mRingtoneManager.stopPreviousRingtone();
 
         } else {
-            ringtone = mRingtoneManager.getRingtone(getRingtoneManagerPosition(mSampleRingtonePos));
+            if(mCursor != null && !mCursor.isClosed()){
+                try{
+                    ringtone = mRingtoneManager.getRingtone(getRingtoneManagerPosition(mSampleRingtonePos));
+                }catch (Exception e){
+                    ringtone = null;
+                }
+            }else
+                ringtone = null;
         }
 
         if (ringtone != null) {
