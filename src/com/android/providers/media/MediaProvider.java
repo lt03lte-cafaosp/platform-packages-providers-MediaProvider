@@ -70,6 +70,7 @@ import android.os.ParcelFileDescriptor;
 import android.os.Process;
 import android.os.RemoteException;
 import android.os.SystemClock;
+import android.os.SystemProperties; //get shut down
 import android.os.storage.StorageManager;
 import android.os.storage.StorageVolume;
 import android.preference.PreferenceManager;
@@ -238,6 +239,11 @@ public class MediaProvider extends ContentProvider {
                         StorageVolume.EXTRA_STORAGE_VOLUME);
                 // If primary external storage is ejected, then remove the external volume
                 // notify all cursors backed by data on that volume.
+                // Don't delete entries if the eject is due to a shutdown
+                if (!"".equals(SystemProperties.get("sys.shutdown.requested"))){
+                    Log.d(TAG, "not deleting entries on eject due to shutdown");
+                    return;
+                }
                 if(storage ==null)return;//qinwendong add avoid nullpointer
                 String internalStoragePath = Environment.getInternalStorageDirectory().getPath();
                 if (storage.getPath().equals(internalStoragePath)) {
@@ -603,7 +609,6 @@ public class MediaProvider extends ContentProvider {
             Environment.MEDIA_MOUNTED_READ_ONLY.equals(phoneStorageState)) {
                 attachVolume(EXTERNAL_VOLUME);
         }
-        attachVolume(EXTERNAL_VOLUME);
 
         HandlerThread ht = new HandlerThread("thumbs thread", Process.THREAD_PRIORITY_BACKGROUND);
         ht.start();
