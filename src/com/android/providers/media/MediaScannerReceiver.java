@@ -46,6 +46,11 @@ public class MediaScannerReceiver extends BroadcastReceiver {
                pm.setComponentEnabledSetting(new ComponentName("com.android.phone",
                                              "com.android.phone.MSimCallFeaturesSubSetting"),
                                              PackageManager.COMPONENT_ENABLED_STATE_DISABLED, 0);
+            }else{
+                PackageManager pm = context.getPackageManager();
+                pm.setComponentEnabledSetting(new ComponentName("com.android.phone",
+                                              "com.android.phone.CallFeaturesSetting"),
+                                              PackageManager.COMPONENT_ENABLED_STATE_DISABLED, 0);
             }
 
         } else {
