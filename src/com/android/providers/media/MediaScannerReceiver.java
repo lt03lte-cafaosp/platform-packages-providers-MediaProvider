@@ -24,6 +24,9 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
 import android.util.Log;
+import android.telephony.TelephonyManager;
+import android.content.pm.PackageManager;
+import android.content.ComponentName;
 
 public class MediaScannerReceiver extends BroadcastReceiver {
     private final static String TAG = "MediaScannerReceiver";
@@ -36,6 +39,14 @@ public class MediaScannerReceiver extends BroadcastReceiver {
             // Scan both internal and external storage
             scan(context, MediaProvider.INTERNAL_VOLUME);
             //scan(context, MediaProvider.EXTERNAL_VOLUME);//because InternalStorage may be unmounted after BOOT_COMPLETED 
+
+            if (!TelephonyManager.isMultiSimEnabled())
+            {
+               PackageManager pm = context.getPackageManager();
+               pm.setComponentEnabledSetting(new ComponentName("com.android.phone",
+                                             "com.android.phone.MSimCallFeaturesSubSetting"),
+                                             PackageManager.COMPONENT_ENABLED_STATE_DISABLED, 0);
+            }
 
         } else {
             if (uri.getScheme().equals("file")) {
