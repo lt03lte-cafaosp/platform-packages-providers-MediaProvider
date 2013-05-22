@@ -19,6 +19,7 @@ package com.android.providers.media;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.database.Cursor;
+import android.database.sqlite.SQLiteException;
 import android.media.Ringtone;
 import android.media.RingtoneManager;
 import android.net.Uri;
@@ -30,10 +31,13 @@ import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ListView;
 import android.widget.TextView;
+import android.util.Log;
 
 import com.android.internal.app.AlertActivity;
 import com.android.internal.app.AlertController;
-
+import android.content.BroadcastReceiver;
+import android.content.IntentFilter;
+import android.content.Context;
 /**
  * The {@link RingtonePickerActivity} allows the user to choose one from all of the
  * available ringtones. The chosen ringtone's URI will be persisted as a string.
@@ -99,6 +103,9 @@ public final class RingtonePickerActivity extends AlertActivity implements
             // Save the position of most recently clicked item
             mClickedPos = which;
 
+            // Set the Button enabled after checked one item of the list.
+            mAlert.getButton(DialogInterface.BUTTON_POSITIVE).setEnabled(true);
+
             // Play clip
             playRingtone(which, 0);
         }
@@ -161,7 +168,7 @@ public final class RingtonePickerActivity extends AlertActivity implements
         p.mPositiveButtonText = getString(com.android.internal.R.string.ok);
         p.mPositiveButtonListener = this;
         p.mNegativeButtonText = getString(com.android.internal.R.string.cancel);
-        p.mPositiveButtonListener = this;
+        p.mNegativeButtonListener = this;
         p.mOnPrepareListViewListener = this;
 
         p.mTitle = intent.getCharSequenceExtra(RingtoneManager.EXTRA_RINGTONE_TITLE);
@@ -170,12 +177,62 @@ public final class RingtonePickerActivity extends AlertActivity implements
         }
 
         setupAlert();
+
+        // Set the button unabled if no item of the list is checked.
+        if (mClickedPos == -1) {
+            mAlert.getButton(DialogInterface.BUTTON_POSITIVE).setEnabled(false);
+        }
+        final IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_SHUTDOWN);
+        registerReceiver(mReceiver, filter);
     }
+
+    private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        stopAnyPlayingRingtone();
+        }
+    };
 
     @Override
     public void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
         outState.putInt(SAVE_CLICKED_POS, mClickedPos);
+    }
+
+    /*
+     * Override this method,After roating screen to landscape,Get previous mClickedPos info,
+     * and restore the checked position.
+     */
+    @Override
+    public void onRestoreInstanceState(Bundle savedInstanceState) {
+        mClickedPos = savedInstanceState.getInt(SAVE_CLICKED_POS);
+        mAlert.getListView().setItemChecked(mClickedPos, true);
+    }
+
+    // If ringtone is set external media but not system ringtone as ringtone,
+    // we should check whether the ringtone is exist. If not, we could set the
+    // ringtone as silent default.
+    private void setSilentRingtoneIfNeed() {
+        if (mExistingUri == null) {
+            return;
+        }
+
+        try {
+            Cursor cursor =
+                getApplicationContext().getContentResolver().query(mExistingUri,
+                        new String[] { MediaStore.Audio.Media.TITLE }, null, null, null);
+            if (cursor != null) {
+                cursor.close();
+            } else {
+                Intent resultIntent = new Intent();
+                resultIntent.putExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI, (String)null);
+                setResult(RESULT_OK, resultIntent);
+            }
+        } catch (SQLiteException sqle) {
+            // TODO: unkown error
+            Log.e(TAG, "Unknown title for the ringtone.");
+        }
     }
 
     public void onPrepareListView(ListView listView) {
@@ -287,7 +344,12 @@ public final class RingtonePickerActivity extends AlertActivity implements
     public void run() {
 
         if (mSampleRingtonePos == mSilentPos) {
-            mRingtoneManager.stopPreviousRingtone();
+            // if default ringtone is playing and check the silent , stop the default ringtone.
+            if (mDefaultRingtone != null && mDefaultRingtone.isPlaying()){
+                mDefaultRingtone.stop();
+            } else {
+                mRingtoneManager.stopPreviousRingtone();
+            }
             return;
         }
 
