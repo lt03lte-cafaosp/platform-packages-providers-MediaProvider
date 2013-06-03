@@ -244,7 +244,7 @@ public class MediaProvider extends ContentProvider {
                     Log.d(TAG, "not deleting entries on eject due to shutdown");
                     return;
                 }
-                if(storage ==null)return;//qinwendong add avoid nullpointer
+                if(storage ==null)return;//HMCT add avoid nullpointer
                 String internalStoragePath = Environment.getInternalStorageDirectory().getPath();
                 if (storage.getPath().equals(internalStoragePath)) {
                     detachVolume(Uri.parse("content://media/external"));
@@ -299,6 +299,39 @@ public class MediaProvider extends ContentProvider {
                             }
                         }
                     }
+                }
+            }else if(intent.getAction().equals(Intent.ACTION_MEDIA_MOUNTED)){//HMCT add for QRD 
+                //TODO delete old TF database
+                String externalStoragePath = Environment.getExternalStorageDirectory().getPath();
+                DatabaseHelper database = getDatabaseForUri(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI);
+                if (database != null) {
+                    SQLiteDatabase db = database.getWritableDatabase();
+                    ContentValues values = new ContentValues();
+                    int mVolumeID = FileUtils.getFatVolumeId(externalStoragePath);;
+                    Uri mBaseUri = Uri.parse("content://media/external/sdcard");
+                    Cursor c = null;
+                    try{
+                        c = query(mBaseUri,new String[] {"sdcard_id"}, null, null, null);
+                        Log.d(TAG,"eject TF cursor c = "+ c);
+                        if(c != null && c.moveToLast()){
+                            Log.d(TAG, "mVolumeID = " +mVolumeID+" # c.moveToLast ="+c.getInt(0));
+                            if(mVolumeID != -1 && mVolumeID != c.getInt(0)){
+                                String where = FileColumns.STORAGE_ID + "=? OR " + FileColumns.STORAGE_ID +"=?";
+                                String[] whereArgs = new String[] { "" ,Integer.toString(getStorageId(externalStoragePath))};
+                                database.mNumUpdates++;
+                                int num = db.delete("files", where, whereArgs);
+                                Log.v(TAG, "delete " + num);
+                            }
+                        }
+                    }catch (Exception e) {
+                        Log.e(TAG, "mResumeTFDatabaseReceiver: delete old VolumeID" , e);
+                    }finally {
+                        if (c != null) {
+                            c.close();
+                        }
+                    }
+                    //update sdcard_info
+                    updateSdcardInfo(db, mVolumeID);
                 }
             }
         }
@@ -591,6 +624,7 @@ public class MediaProvider extends ContentProvider {
         attachVolume(INTERNAL_VOLUME);
 
         IntentFilter iFilter = new IntentFilter(Intent.ACTION_MEDIA_EJECT);
+        iFilter.addAction(Intent.ACTION_MEDIA_MOUNTED);//HMCT:add for QRD
         iFilter.addDataScheme("file");
         context.registerReceiver(mUnmountReceiver, iFilter);
 
@@ -1808,7 +1842,21 @@ public class MediaProvider extends ContentProvider {
         long elapsedSeconds = (SystemClock.currentTimeMicro() - startTime) / 1000000;
         logToDb(db, "Database upgraded from version " + fromVersion + " to " + toVersion
                 + " in " + elapsedSeconds + " seconds");
+        if (!internal){
+            db.execSQL("CREATE TABLE IF NOT EXISTS sdcard_info (sdcard_id INTEGER);");
+        }
     }
+
+    /**
+     * HMCT add sdcard_info in external.db
+     */
+    static void updateSdcardInfo(SQLiteDatabase db, int volumeId) {
+        // delete all 
+        db.execSQL("DELETE FROM sdcard_info ;");
+        //insert new volumeId
+        db.execSQL("INSERT INTO sdcard_info (sdcard_id) VALUES ("+
+                 volumeId + ") ;");
+    }  
 
     /**
      * Write a persistent diagnostic message to the log table.
@@ -2500,6 +2548,9 @@ public class MediaProvider extends ContentProvider {
                 qb.setTables("bookmark");
                 qb.appendWhere("_id = " + uri.getPathSegments().get(2));
                 break;
+			case SDCARD_INFO:
+                qb.setTables("sdcard_info");
+                break; 	
             default:
                 throw new IllegalStateException("Unknown URL: " + uri.toString());
         }
@@ -5281,6 +5332,8 @@ public class MediaProvider extends ContentProvider {
     // UsbReceiver calls insert() and delete() with this URI to tell us
     // when MTP is connected and disconnected
     private static final int MTP_CONNECTED = 705;
+	//HMCT for sdcardid
+    private static final int SDCARD_INFO = 800;
     private static final int MEDIA_BOOKMARK = 1101;
     private static final int MEDIA_BOOKMARK_ID = 1102;
 
@@ -5383,6 +5436,8 @@ public class MediaProvider extends ContentProvider {
         URI_MATCHER.addURI("media", "*/audio/search/fancy/*", AUDIO_SEARCH_FANCY);
         URI_MATCHER.addURI("media", "*/bookmark", MEDIA_BOOKMARK);
         URI_MATCHER.addURI("media", "*/bookmark/#", MEDIA_BOOKMARK_ID);
+		//HMCT add for sdcard
+		URI_MATCHER.addURI("media", "*/sdcard", SDCARD_INFO);
     }
 
     @Override
