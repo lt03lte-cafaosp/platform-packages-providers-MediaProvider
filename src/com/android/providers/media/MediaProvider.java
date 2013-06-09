@@ -244,9 +244,8 @@ public class MediaProvider extends ContentProvider {
                     Log.d(TAG, "not deleting entries on eject due to shutdown");
                     return;
                 }
-                if(storage ==null)return;//HMCT add avoid nullpointer
                 String internalStoragePath = Environment.getInternalStorageDirectory().getPath();
-                if (storage.getPath().equals(internalStoragePath)) {
+                if (internalStoragePath.equals(storage.getPath())) {
                     detachVolume(Uri.parse("content://media/external"));
                     sFolderArtMap.clear();
                     MiniThumbFile.reset();
@@ -302,36 +301,42 @@ public class MediaProvider extends ContentProvider {
                 }
             }else if(intent.getAction().equals(Intent.ACTION_MEDIA_MOUNTED)){//HMCT add for QRD 
                 //TODO delete old TF database
+                StorageVolume storage = (StorageVolume)intent.getParcelableExtra(
+                        StorageVolume.EXTRA_STORAGE_VOLUME);
                 String externalStoragePath = Environment.getExternalStorageDirectory().getPath();
-                DatabaseHelper database = getDatabaseForUri(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI);
-                if (database != null) {
-                    SQLiteDatabase db = database.getWritableDatabase();
-                    ContentValues values = new ContentValues();
-                    int mVolumeID = FileUtils.getFatVolumeId(externalStoragePath);;
-                    Uri mBaseUri = Uri.parse("content://media/external/sdcard");
-                    Cursor c = null;
-                    try{
-                        c = query(mBaseUri,new String[] {"sdcard_id"}, null, null, null);
-                        Log.d(TAG,"eject TF cursor c = "+ c);
-                        if(c != null && c.moveToLast()){
-                            Log.d(TAG, "mVolumeID = " +mVolumeID+" # c.moveToLast ="+c.getInt(0));
-                            if(mVolumeID != -1 && mVolumeID != c.getInt(0)){
-                                String where = FileColumns.STORAGE_ID + "=? OR " + FileColumns.STORAGE_ID +"=?";
-                                String[] whereArgs = new String[] { "" ,Integer.toString(getStorageId(externalStoragePath))};
-                                database.mNumUpdates++;
-                                int num = db.delete("files", where, whereArgs);
-                                Log.v(TAG, "delete " + num);
+                if(externalStoragePath.equals(storage.getPath())){
+                    DatabaseHelper database = getDatabaseForUri(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI);
+                    if (database != null) {
+                        SQLiteDatabase db = database.getWritableDatabase();
+                        ContentValues values = new ContentValues();
+                        int mVolumeID = FileUtils.getFatVolumeId(externalStoragePath);;
+                        Uri mBaseUri = Uri.parse("content://media/external/sdcard");
+                        Cursor c = null;
+                        try{
+                            c = query(mBaseUri,new String[] {"sdcard_id"}, null, null, null);
+                            Log.d(TAG,"eject TF cursor c = "+ c);
+                            if(c != null && c.moveToLast()){
+                                Log.d(TAG, "mVolumeID = " +mVolumeID+" # c.moveToLast ="+c.getInt(0));
+                                if(mVolumeID != -1 && mVolumeID != c.getInt(0)){
+                                    String where = FileColumns.STORAGE_ID + "=? OR " + FileColumns.STORAGE_ID +"=?";
+                                    String[] whereArgs = new String[] { "" ,Integer.toString(getStorageId(externalStoragePath))};
+                                    database.mNumUpdates++;
+                                    int num = db.delete("files", where, whereArgs);
+                                    Log.v(TAG, "delete " + num);
+                                }
+                            }
+                            //update sdcard_info
+                            updateSdcardInfo(db, mVolumeID);    
+                        }catch (Exception e) {
+                            Log.e(TAG, "Exception in mResumeTFDatabaseReceiver: delete old VolumeID" , e);
+                        }finally {
+                            if (c != null) {
+                                c.close();
                             }
                         }
-                    }catch (Exception e) {
-                        Log.e(TAG, "mResumeTFDatabaseReceiver: delete old VolumeID" , e);
-                    }finally {
-                        if (c != null) {
-                            c.close();
-                        }
+         
                     }
-                    //update sdcard_info
-                    updateSdcardInfo(db, mVolumeID);
+
                 }
             }
         }
