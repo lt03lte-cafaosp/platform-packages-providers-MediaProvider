@@ -244,8 +244,7 @@ public class MediaProvider extends ContentProvider {
                     Log.d(TAG, "not deleting entries on eject due to shutdown");
                     return;
                 }
-                String internalStoragePath = Environment.getInternalStorageDirectory().getPath();
-                if (internalStoragePath.equals(storage.getPath())) {
+                if (storage.getPath().equals(mExternalStoragePaths[1])) {
                     detachVolume(Uri.parse("content://media/external"));
                     sFolderArtMap.clear();
                     MiniThumbFile.reset();
