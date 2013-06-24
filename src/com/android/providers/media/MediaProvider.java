@@ -303,6 +303,7 @@ public class MediaProvider extends ContentProvider {
                 StorageVolume storage = (StorageVolume)intent.getParcelableExtra(
                         StorageVolume.EXTRA_STORAGE_VOLUME);
                 String externalStoragePath = Environment.getExternalStorageDirectory().getPath();
+                if(storage == null)return;//HMCT add for FileManager intent storage null
                 if(externalStoragePath.equals(storage.getPath())){
                     DatabaseHelper database = getDatabaseForUri(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI);
                     if (database != null) {
