@@ -41,6 +41,7 @@
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_MOUNTED" />
+                <action android:name="com.android.fileexplorer.action.MEDIA_SCANNER_SCAN_ALL" />
                 <data android:scheme="file" />
             </intent-filter>
             <intent-filter>
