@@ -30,6 +30,8 @@ public class MediaScannerReceiver extends BroadcastReceiver {
 
     private static final String ACTION_MEDIA_SCANNER_SCAN_ALL =
             "com.android.fileexplorer.action.MEDIA_SCANNER_SCAN_ALL";
+    private static final String ACTION_MEDIA_SCANNER_SCAN_AUDIOFILE =
+            "com.android.fileexplorer.action.MEDIA_SCANNER_SCAN_AUDIOFILE";
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -48,7 +50,8 @@ public class MediaScannerReceiver extends BroadcastReceiver {
 
                 Log.d(TAG, "action: " + action + " path: " + path);
                 if (Intent.ACTION_MEDIA_MOUNTED.equals(action)
-                        || ACTION_MEDIA_SCANNER_SCAN_ALL.equals(action)) {
+                        || ACTION_MEDIA_SCANNER_SCAN_ALL.equals(action)
+                        || ACTION_MEDIA_SCANNER_SCAN_AUDIOFILE.equals(action)) {
                     // scan whenever any volume is mounted
                     scan(context, MediaProvider.EXTERNAL_VOLUME);
                 } else if (Intent.ACTION_MEDIA_SCANNER_SCAN_FILE.equals(action) &&
