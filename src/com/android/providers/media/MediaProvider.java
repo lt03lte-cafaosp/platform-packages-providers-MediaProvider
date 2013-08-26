@@ -259,12 +259,19 @@ public class MediaProvider extends ContentProvider {
                                 // First clear the file path to disable the _DELETE_FILE database hook.
                                 // We do this to avoid deleting files if the volume is remounted while
                                 // we are still processing the unmount event.
-                                ContentValues values = new ContentValues();
-                                values.put(Files.FileColumns.DATA, "");
                                 String where = FileColumns.STORAGE_ID + "=?";
                                 String[] whereArgs = new String[] { Integer.toString(storage.getStorageId()) };
                                 database.mNumUpdates++;
-                                db.update("files", values, where, whereArgs);
+                                try {
+                                    String updateSQLString = "UPDATE files SET " +
+                                            "_data='/storage/sdcard2'||SUBSTR(_data,17) " +
+                                            "WHERE _data LIKE '/storage/sdcard1/%' AND "
+                                            + FileColumns.STORAGE_ID + " = "
+                                            + whereArgs[0] + ";";
+                                    db.execSQL(updateSQLString);
+                                } catch (Exception e) {
+                                    Log.e(TAG, "disable the _DELETE_FILE database hook failed", e);
+                                }
                                 // now delete the records
                                 database.mNumDeletes++;
                                 int numpurged = db.delete("files", where, whereArgs);
@@ -1762,7 +1769,7 @@ public class MediaProvider extends ContentProvider {
             // Views don't need to be recreated.
 
             db.execSQL("CREATE TABLE files2 (_id INTEGER PRIMARY KEY AUTOINCREMENT," +
-                    "_data TEXT" +
+                    "_data TEXT UNIQUE" +
                     // the internal filesystem is case-sensitive
                     (internal ? "," : " COLLATE NOCASE,") +
                     "_size INTEGER,format INTEGER,parent INTEGER,date_added INTEGER," +
