@@ -3898,16 +3898,16 @@ public class MediaProvider extends ContentProvider {
 
                 if (sGetTableAndWhereParam.table.equals("files")) {
                     String deleteparam = uri.getQueryParameter(MediaStore.PARAM_DELETE_DATA);
-                    if (deleteparam == null || ! deleteparam.equals("false")) {
-                        database.mNumQueries++;
-                        Cursor c = db.query(sGetTableAndWhereParam.table,
-                                sMediaTypeDataId,
-                                sGetTableAndWhereParam.where, whereArgs, null, null, null);
-                        String [] idvalue = new String[] { "" };
-                        String [] playlistvalues = new String[] { "", "" };
-                        while (c.moveToNext()) {
-                            int mediatype = c.getInt(0);
-                            if (mediatype == FileColumns.MEDIA_TYPE_IMAGE) {
+                    database.mNumQueries++;
+                    Cursor c = db.query(sGetTableAndWhereParam.table,
+                            sMediaTypeDataId,
+                            sGetTableAndWhereParam.where, whereArgs, null, null, null);
+                    String [] idvalue = new String[] { "" };
+                    String [] playlistvalues = new String[] { "", "" };
+                    while (c.moveToNext()) {
+                        int mediatype = c.getInt(0);
+                        if (mediatype == FileColumns.MEDIA_TYPE_IMAGE) {
+                            if (deleteparam == null || ! deleteparam.equals("false")) {
                                 try {
                                     Libcore.os.remove(c.getString(1));
                                     idvalue[0] =  "" + c.getLong(2);
@@ -3922,40 +3922,42 @@ public class MediaProvider extends ContentProvider {
                                     db.delete("thumbnails", "image_id=?", idvalue);
                                 } catch (ErrnoException e) {
                                 }
-                            } else if (mediatype == FileColumns.MEDIA_TYPE_VIDEO) {
+                            }
+                        } else if (mediatype == FileColumns.MEDIA_TYPE_VIDEO) {
+                            if (deleteparam == null || ! deleteparam.equals("false")) {
                                 try {
                                     Libcore.os.remove(c.getString(1));
                                 } catch (ErrnoException e) {
                                 }
-                            } else if (mediatype == FileColumns.MEDIA_TYPE_AUDIO) {
-                                if (!database.mInternal) {
-                                    idvalue[0] =  "" + c.getLong(2);
-                                    database.mNumDeletes += 2; // also count the one below
-                                    db.delete("audio_genres_map", "audio_id=?", idvalue);
-                                    // for each playlist that the item appears in, move
-                                    // all the items behind it forward by one
-                                    Cursor cc = db.query("audio_playlists_map",
-                                            sPlaylistIdPlayOrder,
-                                            "audio_id=?", idvalue, null, null, null);
-                                    while (cc.moveToNext()) {
-                                        playlistvalues[0] = "" + cc.getLong(0);
-                                        playlistvalues[1] = "" + cc.getInt(1);
-                                        database.mNumUpdates++;
-                                        db.execSQL("UPDATE audio_playlists_map" +
-                                                " SET play_order=play_order-1" +
-                                                " WHERE playlist_id=? AND play_order>?",
-                                                playlistvalues);
-                                    }
-                                    cc.close();
-                                    db.delete("audio_playlists_map", "audio_id=?", idvalue);
-                                }
-                            } else if (mediatype == FileColumns.MEDIA_TYPE_PLAYLIST) {
-                                // TODO, maybe: remove the audio_playlists_cleanup trigger and implement
-                                // it functionality here (clean up the playlist map)
                             }
+                        } else if (mediatype == FileColumns.MEDIA_TYPE_AUDIO) {
+                            if (!database.mInternal) {
+                                idvalue[0] =  "" + c.getLong(2);
+                                database.mNumDeletes += 2; // also count the one below
+                                db.delete("audio_genres_map", "audio_id=?", idvalue);
+                                // for each playlist that the item appears in, move
+                                // all the items behind it forward by one
+                                Cursor cc = db.query("audio_playlists_map",
+                                        sPlaylistIdPlayOrder,
+                                        "audio_id=?", idvalue, null, null, null);
+                                while (cc.moveToNext()) {
+                                    playlistvalues[0] = "" + cc.getLong(0);
+                                    playlistvalues[1] = "" + cc.getInt(1);
+                                    database.mNumUpdates++;
+                                    db.execSQL("UPDATE audio_playlists_map" +
+                                            " SET play_order=play_order-1" +
+                                            " WHERE playlist_id=? AND play_order>?",
+                                            playlistvalues);
+                                }
+                                cc.close();
+                                db.delete("audio_playlists_map", "audio_id=?", idvalue);
+                            }
+                        } else if (mediatype == FileColumns.MEDIA_TYPE_PLAYLIST) {
+                            // TODO, maybe: remove the audio_playlists_cleanup trigger and implement
+                            // it functionality here (clean up the playlist map)
                         }
-                        c.close();
                     }
+                    c.close();
                 }
 
                 switch (match) {
