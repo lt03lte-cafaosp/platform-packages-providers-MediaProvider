@@ -259,12 +259,19 @@ public class MediaProvider extends ContentProvider {
                                 // First clear the file path to disable the _DELETE_FILE database hook.
                                 // We do this to avoid deleting files if the volume is remounted while
                                 // we are still processing the unmount event.
-                                ContentValues values = new ContentValues();
-                                values.put(Files.FileColumns.DATA, "");
                                 String where = FileColumns.STORAGE_ID + "=?";
                                 String[] whereArgs = new String[] { Integer.toString(storage.getStorageId()) };
                                 database.mNumUpdates++;
-                                db.update("files", values, where, whereArgs);
+                                try {
+                                    String updateSQLString = "UPDATE files SET " +
+                                            "_data='/storage/sdcard2'||SUBSTR(_data,17) " +
+                                            "WHERE _data LIKE '/storage/sdcard1/%' AND "
+                                            + FileColumns.STORAGE_ID + " = "
+                                            + whereArgs[0] + ";";
+                                    db.execSQL(updateSQLString);
+                                } catch (Exception e) {
+                                    Log.e(TAG, "disable the _DELETE_FILE database hook failed", e);
+                                }
                                 // now delete the records
                                 database.mNumDeletes++;
                                 int numpurged = db.delete("files", where, whereArgs);
@@ -1814,6 +1821,19 @@ public class MediaProvider extends ContentProvider {
             db.execSQL("INSERT INTO log_tmp SELECT time, message FROM log order by rowid;");
             db.execSQL("DROP TABLE log;");
             db.execSQL("ALTER TABLE log_tmp RENAME TO log;");
+
+        }
+
+        if (fromVersion < 602) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS bookmarks (" +
+                " _id INTEGER PRIMARY KEY," +
+                " _data TEXT," +
+                " _display_name TEXT," +
+                " position INTEGER," +
+                " date_added INTEGER," +
+                " mime_type TEXT," +
+                " media_type TEXT" +
+                ");");
         }
 
         sanityCheck(db, fromVersion);
@@ -2495,6 +2515,13 @@ public class MediaProvider extends ContentProvider {
             case MTP_OBJECT_REFERENCES:
                 int handle = Integer.parseInt(uri.getPathSegments().get(2));
                 return getObjectReferences(helper, db, handle);
+            case MEDIA_BOOKMARK:
+                qb.setTables("bookmarks");
+                break;
+            case MEDIA_BOOKMARK_ID:
+                qb.setTables("bookmarks");
+                qb.appendWhere("_id = " + uri.getPathSegments().get(2));
+                break;
 
             default:
                 throw new IllegalStateException("Unknown URL: " + uri.toString());
@@ -3466,6 +3493,13 @@ public class MediaProvider extends ContentProvider {
                 }
                 break;
 
+            case MEDIA_BOOKMARK:
+                rowId = db.insert("bookmarks", "mime_type", initialValues);
+                if (rowId > 0) {
+                    newUri = ContentUris.withAppendedId(uri, rowId);
+                }
+                break;
+
             default:
                 throw new UnsupportedOperationException("Invalid URI " + uri);
         }
@@ -3786,6 +3820,12 @@ public class MediaProvider extends ContentProvider {
             case FILES:
             case MTP_OBJECTS:
                 out.table = "files";
+                break;
+            case MEDIA_BOOKMARK_ID:
+                where = "_id=" + uri.getPathSegments().get(2);
+                // fall through
+            case MEDIA_BOOKMARK:
+                out.table = "bookmarks";
                 break;
 
             default:
@@ -5243,7 +5283,7 @@ public class MediaProvider extends ContentProvider {
     private static final int MEDIA_SCANNER = 500;
 
     private static final int FS_ID = 600;
-    private static final int VERSION = 601;
+    private static final int VERSION = 602;
 
     private static final int FILES = 700;
     private static final int FILES_ID = 701;
@@ -5255,6 +5295,8 @@ public class MediaProvider extends ContentProvider {
     // UsbReceiver calls insert() and delete() with this URI to tell us
     // when MTP is connected and disconnected
     private static final int MTP_CONNECTED = 705;
+    private static final int MEDIA_BOOKMARK = 1101;
+    private static final int MEDIA_BOOKMARK_ID = 1102;
 
     private static final UriMatcher URI_MATCHER =
             new UriMatcher(UriMatcher.NO_MATCH);
@@ -5353,6 +5395,8 @@ public class MediaProvider extends ContentProvider {
         // used by the music app's search activity
         URI_MATCHER.addURI("media", "*/audio/search/fancy", AUDIO_SEARCH_FANCY);
         URI_MATCHER.addURI("media", "*/audio/search/fancy/*", AUDIO_SEARCH_FANCY);
+        URI_MATCHER.addURI("media", "*/bookmark", MEDIA_BOOKMARK);
+        URI_MATCHER.addURI("media", "*/bookmark/#", MEDIA_BOOKMARK_ID);
     }
 
     @Override

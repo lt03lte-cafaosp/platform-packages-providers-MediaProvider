@@ -2,7 +2,7 @@
         package="com.android.providers.media"
         android:sharedUserId="android.media"
         android:sharedUserLabel="@string/uid_label"
-        android:versionCode="601">
+        android:versionCode="602">
         
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
@@ -41,6 +41,8 @@
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_MOUNTED" />
+                <action android:name="com.android.fileexplorer.action.MEDIA_SCANNER_SCAN_ALL" />
+                <action android:name="com.android.fileexplorer.action.MEDIA_SCANNER_SCAN_AUDIOFILE" />
                 <data android:scheme="file" />
             </intent-filter>
             <intent-filter>

@@ -89,6 +89,9 @@ public final class RingtonePickerActivity extends AlertActivity implements
      */
     private Ringtone mDefaultRingtone;
 
+    // Whether we have tap the "OK" or "Cancel" button.
+    private boolean mIsHasClick = false;
+
     private DialogInterface.OnClickListener mRingtoneClickListener =
             new DialogInterface.OnClickListener() {
 
@@ -236,6 +239,13 @@ public final class RingtonePickerActivity extends AlertActivity implements
     public void onClick(DialogInterface dialog, int which) {
         boolean positiveResult = which == DialogInterface.BUTTON_POSITIVE;
 
+        // Should't response the "OK" and "Cancel" button's click event at the
+        // same time.
+        if (mIsHasClick || (mCursor == null)) {
+            return;
+        }
+        mIsHasClick = true;
+
         // Stop playing the previous ringtone
         mRingtoneManager.stopPreviousRingtone();
 
@@ -323,7 +333,15 @@ public final class RingtonePickerActivity extends AlertActivity implements
             mRingtoneManager.stopPreviousRingtone();
 
         } else {
-            ringtone = mRingtoneManager.getRingtone(getRingtoneManagerPosition(mSampleRingtonePos));
+            if(mCursor != null && !mCursor.isClosed()){
+                try{
+                    ringtone = mRingtoneManager.getRingtone(getRingtoneManagerPosition(mSampleRingtonePos));
+                }catch (Exception e){
+                    ringtone = null;
+                }
+            }else
+                ringtone = null;
+
         }
 
         if (ringtone != null) {
@@ -332,9 +350,21 @@ public final class RingtonePickerActivity extends AlertActivity implements
     }
 
     @Override
+    public void startManagingCursor(Cursor c) {
+       // Do nothing here
+       // We just don't want the Activity.java to manage the cursor
+    }
+
+    @Override
     protected void onStop() {
         super.onStop();
         stopAnyPlayingRingtone();
+    }
+
+    @Override
+    protected void onDestroy() {
+       super.onDestroy();
+        mIsHasClick = false;
     }
 
     @Override
