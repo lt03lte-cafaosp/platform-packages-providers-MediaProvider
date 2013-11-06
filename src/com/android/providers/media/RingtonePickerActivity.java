@@ -1,5 +1,7 @@
 /*
  * Copyright (C) 2007 The Android Open Source Project
+ * Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ * Not a Contribution.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,6 +32,15 @@ import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ListView;
 import android.widget.TextView;
+//DRM Changes --START
+import android.util.Log;
+import android.widget.Toast;
+import android.content.ContentValues;
+import android.drm.DrmManagerClient;
+import android.drm.DrmStore.DrmDeliveryType;
+import android.drm.DrmStore.RightsStatus;
+import android.drm.DrmStore.Action;
+//DRM Changes --END
 
 import com.android.internal.app.AlertActivity;
 import com.android.internal.app.AlertController;
@@ -50,6 +61,10 @@ public final class RingtonePickerActivity extends AlertActivity implements
 
     private static final String SAVE_CLICKED_POS = "clicked_pos";
 
+    // DRM CHANGES START
+    public static final String BUY_LICENSE="android.drmservice.intent.action.BUY_LICENSE";
+    //DRM CHANGES END
+
     private RingtoneManager mRingtoneManager;
 
     private Cursor mCursor;
@@ -63,6 +78,10 @@ public final class RingtonePickerActivity extends AlertActivity implements
 
     /** The position in the list of the last clicked item. */
     private int mClickedPos = -1;
+
+    //DRM CHANGES START
+    private int mTypes = -1;
+    //DRM CHANGES END
 
     /** The position in the list of the ringtone to sample. */
     private int mSampleRingtonePos = -1;
@@ -141,9 +160,9 @@ public final class RingtonePickerActivity extends AlertActivity implements
         mRingtoneManager.setIncludeDrm(includeDrm);
 
         // Get the types of ringtones to show
-        int types = intent.getIntExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, -1);
-        if (types != -1) {
-            mRingtoneManager.setType(types);
+        mTypes = intent.getIntExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, -1);
+        if (mTypes != -1) {
+            mRingtoneManager.setType(mTypes);
         }
 
         mCursor = mRingtoneManager.getCursor();
@@ -262,6 +281,36 @@ public final class RingtonePickerActivity extends AlertActivity implements
             } else {
                 uri = mRingtoneManager.getRingtoneUri(getRingtoneManagerPosition(mClickedPos));
             }
+
+            // DRM CHANGES START
+            String filePath = convertMediaUriToPath(uri);
+            if (filePath != null && filePath.endsWith(".dcf")) {
+                DrmManagerClient drmClient = new DrmManagerClient(this);
+                if (mTypes != mRingtoneManager.TYPE_ALARM) {
+                    ContentValues values = drmClient.getMetadata(filePath);
+                    int drmType = values.getAsInteger("DRM-TYPE");
+
+                    if (drmType != DrmDeliveryType.SEPARATE_DELIVERY) {
+                        Toast.makeText(this, R.string.drm_no_share,Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    finish();
+                } else if (mTypes == mRingtoneManager.TYPE_ALARM) {
+                    int status = -1;
+                    status = drmClient.checkRightsStatus(filePath, Action.PLAY);
+                    if (RightsStatus.RIGHTS_VALID != status) {
+                        ContentValues values = drmClient.getMetadata(filePath);
+                        String address = values.getAsString("Rights-Issuer");
+                        Log.d(TAG, "address = " + address);
+                        Intent intent = new Intent(BUY_LICENSE);
+                        intent.putExtra("DRM_FILE_PATH", address);
+                        this.sendBroadcast(intent);
+                        return;
+                    }
+                }
+                if (drmClient != null) drmClient.release();
+            }
+            // DRM CHANGES END
 
             resultIntent.putExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI, uri);
             setResult(RESULT_OK, resultIntent);
@@ -396,4 +445,16 @@ public final class RingtonePickerActivity extends AlertActivity implements
         return ringtoneManagerPos + mStaticItemCount;
     }
 
+    //DRM Changes --START
+    private String convertMediaUriToPath(Uri uri) {
+        String [] proj = { MediaStore.Audio.Media.DATA };
+        Cursor cursor = getContentResolver().query(uri, proj, null, null, null);
+        if (cursor == null) return null;
+        int column_index = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA);
+        cursor.moveToFirst();
+        String path = cursor.getString(column_index);
+        cursor.close();
+        return path;
+   }
+    //DRM Changes --END
 }

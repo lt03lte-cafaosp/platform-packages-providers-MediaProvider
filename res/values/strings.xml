@@ -26,4 +26,7 @@
 
     <!-- Description line for music artists in the search/suggestion results -->
     <string name="artist_label">Artist</string>
+
+    <!-- BORQS DRM CHANGE -->
+    <string name="drm_no_share">DRM file cannot be shared</string>
 </resources>
