@@ -283,32 +283,34 @@ public final class RingtonePickerActivity extends AlertActivity implements
             }
 
             // DRM CHANGES START
-            String filePath = convertMediaUriToPath(uri);
-            if (filePath != null && filePath.endsWith(".dcf")) {
-                DrmManagerClient drmClient = new DrmManagerClient(this);
-                if (mTypes != mRingtoneManager.TYPE_ALARM) {
-                    ContentValues values = drmClient.getMetadata(filePath);
-                    int drmType = values.getAsInteger("DRM-TYPE");
-
-                    if (drmType != DrmDeliveryType.SEPARATE_DELIVERY) {
-                        Toast.makeText(this, R.string.drm_no_share,Toast.LENGTH_LONG).show();
-                        return;
-                    }
-                    finish();
-                } else if (mTypes == mRingtoneManager.TYPE_ALARM) {
-                    int status = -1;
-                    status = drmClient.checkRightsStatus(filePath, Action.PLAY);
-                    if (RightsStatus.RIGHTS_VALID != status) {
+            if (uri != null) {
+                String filePath = convertMediaUriToPath(uri);
+                if (filePath != null && filePath.endsWith(".dcf")) {
+                    DrmManagerClient drmClient = new DrmManagerClient(this);
+                    if (mTypes != mRingtoneManager.TYPE_ALARM) {
                         ContentValues values = drmClient.getMetadata(filePath);
-                        String address = values.getAsString("Rights-Issuer");
-                        Log.d(TAG, "address = " + address);
-                        Intent intent = new Intent(BUY_LICENSE);
-                        intent.putExtra("DRM_FILE_PATH", address);
-                        this.sendBroadcast(intent);
-                        return;
+                        int drmType = values.getAsInteger("DRM-TYPE");
+
+                        if (drmType != DrmDeliveryType.SEPARATE_DELIVERY) {
+                            Toast.makeText(this, R.string.drm_no_share,Toast.LENGTH_LONG).show();
+                            return;
+                        }
+                        finish();
+                    } else if (mTypes == mRingtoneManager.TYPE_ALARM) {
+                        int status = -1;
+                        status = drmClient.checkRightsStatus(filePath, Action.PLAY);
+                        if (RightsStatus.RIGHTS_VALID != status) {
+                            ContentValues values = drmClient.getMetadata(filePath);
+                            String address = values.getAsString("Rights-Issuer");
+                            Log.d(TAG, "address = " + address);
+                            Intent intent = new Intent(BUY_LICENSE);
+                            intent.putExtra("DRM_FILE_PATH", address);
+                            this.sendBroadcast(intent);
+                            return;
+                        }
                     }
+                    if (drmClient != null) drmClient.release();
                 }
-                if (drmClient != null) drmClient.release();
             }
             // DRM CHANGES END
 
