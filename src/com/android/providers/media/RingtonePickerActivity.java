@@ -283,7 +283,8 @@ public final class RingtonePickerActivity extends AlertActivity implements
             }
 
             // DRM CHANGES START
-            if (uri != null) {
+			// we shouldn't check default Ringtone as a drm file here.
+            if(uri != null && mClickedPos != mDefaultRingtonePos){
                 String filePath = convertMediaUriToPath(uri);
                 if (filePath != null && filePath.endsWith(".dcf")) {
                     DrmManagerClient drmClient = new DrmManagerClient(this);
