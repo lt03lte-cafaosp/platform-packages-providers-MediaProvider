@@ -69,6 +69,7 @@ import android.os.RemoteException;
 import android.os.SystemClock;
 import android.os.storage.StorageManager;
 import android.os.storage.StorageVolume;
+import android.os.SystemProperties;
 import android.preference.PreferenceManager;
 import android.provider.BaseColumns;
 import android.provider.MediaStore;
@@ -253,6 +254,11 @@ public class MediaProvider extends ContentProvider {
                     // If secondary external storage is ejected, then we delete all database
                     // entries for that storage from the files table.
                     synchronized (mDatabases) {
+                        // Don't delete entries if the eject is due to shutdown
+                        if (!"".equals(SystemProperties.get("sys.shutdown.requested"))) {
+                            Log.d(TAG, "not deleting entries on eject due to shutdown");
+                            return;
+                        }
                         DatabaseHelper database = mDatabases.get(EXTERNAL_VOLUME);
                         Uri uri = Uri.parse("file://" + storage.getPath());
                         if (database != null) {
