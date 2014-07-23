@@ -287,7 +287,9 @@ public final class RingtonePickerActivity extends AlertActivity implements
 
         getWindow().getDecorView().post(new Runnable() {
             public void run() {
-                mCursor.deactivate();
+                if (mCursor != null) {
+                    mCursor.deactivate();
+                }
             }
         });
 
@@ -331,7 +333,15 @@ public final class RingtonePickerActivity extends AlertActivity implements
             ringtone = mDefaultRingtone;
             mCurrentRingtone = null;
         } else {
-            ringtone = mRingtoneManager.getRingtone(getRingtoneManagerPosition(mSampleRingtonePos));
+            if (mCursor != null && !mCursor.isClosed()) {
+                try {
+                    ringtone = mRingtoneManager.getRingtone(getRingtoneManagerPosition(mSampleRingtonePos));
+                } catch (Exception e) {
+                    ringtone = null;
+                }
+            } else {
+                ringtone = null;
+            }
             mCurrentRingtone = ringtone;
         }
 
@@ -354,12 +364,19 @@ public final class RingtonePickerActivity extends AlertActivity implements
         } else {
             saveAnyPlayingRingtone();
         }
+        if (mCursor != null) {
+            mCursor.deactivate();
+        }
     }
 
     @Override
     protected void onDestroy() {
        super.onDestroy();
         mIsHasClick = false;
+        if (mCursor != null) {
+            mCursor.close();
+            mCursor = null;
+        }
     }
 
     @Override
