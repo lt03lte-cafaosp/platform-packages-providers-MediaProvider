@@ -364,9 +364,6 @@ public final class RingtonePickerActivity extends AlertActivity implements
         } else {
             saveAnyPlayingRingtone();
         }
-        if (mCursor != null) {
-            mCursor.deactivate();
-        }
     }
 
     @Override
