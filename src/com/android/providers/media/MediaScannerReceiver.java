@@ -30,16 +30,19 @@ import java.io.IOException;
 
 public class MediaScannerReceiver extends BroadcastReceiver {
     private final static String TAG = "MediaScannerReceiver";
-
+    private static String FAST_MEDIA_SCAN = "true";
     @Override
     public void onReceive(Context context, Intent intent) {
         final String action = intent.getAction();
         final Uri uri = intent.getData();
         if (Intent.ACTION_BOOT_COMPLETED.equals(action)) {
             // Scan both internal and external storage
-            scan(context, MediaProvider.INTERNAL_VOLUME);
-            scan(context, MediaProvider.EXTERNAL_VOLUME);
-
+            if (Boolean.parseBoolean(FAST_MEDIA_SCAN)) {
+                scan(context, MediaProvider.INTERNAL_VOLUME, MediaProvider.EXTERNAL_VOLUME);
+            } else {
+                scan(context, MediaProvider.INTERNAL_VOLUME);
+                scan(context, MediaProvider.EXTERNAL_VOLUME);
+            }
         } else {
             if (uri.getScheme().equals("file")) {
                 // handle intents related to external storage
@@ -59,8 +62,12 @@ public class MediaScannerReceiver extends BroadcastReceiver {
 
                 Log.d(TAG, "action: " + action + " path: " + path);
                 if (Intent.ACTION_MEDIA_MOUNTED.equals(action)) {
+                   if (Boolean.parseBoolean(FAST_MEDIA_SCAN)) {
+                    scan(context, null, MediaProvider.EXTERNAL_VOLUME);
+                   } else {
                     // scan whenever any volume is mounted
                     scan(context, MediaProvider.EXTERNAL_VOLUME);
+                   }
                 } else if (Intent.ACTION_MEDIA_SCANNER_SCAN_FILE.equals(action) &&
                         path != null && path.startsWith(externalStoragePath + "/")) {
                     scanFile(context, path);
@@ -75,6 +82,15 @@ public class MediaScannerReceiver extends BroadcastReceiver {
         context.startService(
                 new Intent(context, MediaScannerService.class).putExtras(args));
     }    
+    //Added to support Fast MediaScan
+    private void scan(Context context, String internalvolume, String externalvolume) {
+        Bundle args = new Bundle();
+        args.putString("internal_volume", internalvolume);
+        args.putString("external_volume", externalvolume);
+        args.putString("fastscan_enable", FAST_MEDIA_SCAN);
+        context.startService(
+               new Intent(context, MediaScannerService.class).putExtras(args));
+    }
 
     private void scanFile(Context context, String path) {
         Bundle args = new Bundle();

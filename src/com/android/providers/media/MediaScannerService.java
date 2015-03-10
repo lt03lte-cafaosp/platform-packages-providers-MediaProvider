@@ -93,7 +93,6 @@ public class MediaScannerService extends Service implements Runnable
             ContentValues values = new ContentValues();
             values.put(MediaStore.MEDIA_SCANNER_VOLUME, volumeName);
             Uri scanUri = getContentResolver().insert(MediaStore.getMediaScannerUri(), values);
-
             sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_STARTED, uri));
 
             try {
@@ -114,6 +113,30 @@ public class MediaScannerService extends Service implements Runnable
             mWakeLock.release();
         }
     }
+
+    private void scan_fastmedia(String[] internaldirectories, String[] externaldirectories,
+                                            String internalVolume, String externalVolume) {
+         // don't sleep while scanning
+         mWakeLock.acquire();
+
+         try {
+             sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_STARTED));
+             try {
+                 if (externalVolume.equals(MediaProvider.EXTERNAL_VOLUME)) {
+                    openDatabase(externalVolume);
+             }
+                 MediaScanner scanner = createMediaScanner();
+                 scanner.fastMediaScan_scanDirectories(internaldirectories, externaldirectories,internalVolume, externalVolume);
+             } catch (Exception e) {
+                 Log.e(TAG, "exception in MediaScanner.scan()", e);
+             }
+
+         } finally {
+             sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_FINISHED));
+             mWakeLock.release();
+         }
+     }
+
     
     @Override
     public void onCreate()
@@ -235,7 +258,10 @@ public class MediaScannerService extends Service implements Runnable
         {
             Bundle arguments = (Bundle) msg.obj;
             String filePath = arguments.getString("filepath");
-            
+            boolean fast_mediascan = false;
+            if (arguments.getString("fastscan_enable") != null ) {
+               fast_mediascan = Boolean.parseBoolean(arguments.getString("fastscan_enable"));
+            }
             try {
                 if (filePath != null) {
                     IBinder binder = arguments.getIBinder("listener");
@@ -251,6 +277,29 @@ public class MediaScannerService extends Service implements Runnable
                         listener.scanCompleted(filePath, uri);
                     }
                 } else {
+
+                    if (fast_mediascan == true) {
+                        String internalvolume = arguments.getString("internal_volume");
+                        String externalvolume = arguments.getString("external_volume");
+                        String[] internaldirectories = null;
+                        String[] externaldirectories = null;
+
+                        // scan internal media storage
+                        if (MediaProvider.INTERNAL_VOLUME.equals(internalvolume)) {
+                                internaldirectories = new String[] {
+                                        Environment.getRootDirectory() + "/media",
+                                };
+                        }
+
+                        // scan external storage volumes
+                        if (MediaProvider.EXTERNAL_VOLUME.equals(externalvolume)) {
+                                externaldirectories = mExternalStoragePaths;
+                        }
+                        if ((internaldirectories!=null) || (externaldirectories!=null)) {
+                             scan_fastmedia(internaldirectories, externaldirectories, internalvolume, externalvolume);
+                        }
+
+                    } else {
                     String volume = arguments.getString("volume");
                     String[] directories = null;
                     
@@ -272,6 +321,7 @@ public class MediaScannerService extends Service implements Runnable
                         scan(directories, volume);
                         if (false) Log.d(TAG, "done scanning volume " + volume);
                     }
+                   }
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Exception in handleMessage", e);
