@@ -117,10 +117,17 @@ public class MediaScannerService extends Service implements Runnable
     private void scan_fastmedia(String[] internaldirectories, String[] externaldirectories,
                                             String internalVolume, String externalVolume) {
          // don't sleep while scanning
+         Uri uri = null;
+         if (internaldirectories != null && internaldirectories.length > 0 )
+             uri = Uri.parse("file://" + internaldirectories[0]);
+         else if (externaldirectories != null && externaldirectories.length > 0)
+             uri = Uri.parse("file://" + externaldirectories[0]);
+         else
+             uri = null;
          mWakeLock.acquire();
 
          try {
-             sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_STARTED));
+             sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_STARTED, uri));
              try {
                  if (externalVolume.equals(MediaProvider.EXTERNAL_VOLUME)) {
                     openDatabase(externalVolume);
@@ -132,7 +139,7 @@ public class MediaScannerService extends Service implements Runnable
              }
 
          } finally {
-             sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_FINISHED));
+             sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_FINISHED, uri));
              mWakeLock.release();
          }
      }
