@@ -165,6 +165,7 @@ public class MediaProvider extends ContentProvider {
 
     private boolean mCaseInsensitivePaths;
     private static String[] mExternalStoragePaths;
+    private static StorageVolume[] mVolumes;
 
     // For compatibility with the approximately 0 apps that used mediaprovider search in
     // releases 1.0, 1.1 or 1.5
@@ -615,6 +616,7 @@ public class MediaProvider extends ContentProvider {
         StorageManager storageManager =
                 (StorageManager)context.getSystemService(Context.STORAGE_SERVICE);
         mExternalStoragePaths = storageManager.getVolumePaths();
+        mVolumes = storageManager.getVolumeList();
 
         // open external database if external storage is mounted
         String state = Environment.getExternalStorageState();
@@ -3083,12 +3085,12 @@ public class MediaProvider extends ContentProvider {
     }
 
     private int getStorageId(String path) {
-        for (int i = 0; i < mExternalStoragePaths.length; i++) {
-            String test = mExternalStoragePaths[i];
+        for (int i = 0; i < mVolumes.length; i++) {
+            String test = mVolumes[i].getPath();
             if (path.startsWith(test)) {
                 int length = test.length();
                 if (path.length() == length || path.charAt(length) == '/') {
-                    return MtpStorage.getStorageId(i);
+                    return mVolumes[i].getStorageId();
                 }
             }
         }
