@@ -30,6 +30,7 @@ import android.os.storage.StorageEventListener;
 import android.os.storage.StorageManager;
 import android.os.storage.StorageVolume;
 import android.util.Log;
+import android.util.BoostFramework;
 
 import java.io.File;
 import java.util.HashMap;
@@ -37,7 +38,10 @@ import java.util.HashMap;
 public class MtpService extends Service {
     private static final String TAG = "MtpService";
     private static final boolean LOGD = false;
-
+    private BoostFramework mPerfBoost = null;
+    private boolean mIsPerfBoostEnabled = false;
+    private int mBoostParamVal[];
+    private boolean mIsPerfLockAcquired = false;
     // We restrict PTP to these subdirectories
     private static final String[] PTP_DIRECTORIES = new String[] {
         Environment.DIRECTORY_DCIM,
@@ -93,6 +97,11 @@ public class MtpService extends Service {
     @Override
     public void onCreate() {
         mStorageManager = StorageManager.from(this);
+        mIsPerfBoostEnabled = getApplicationContext().getResources().getBoolean(
+                com.android.internal.R.bool.config_enableBoostForMtp);
+        mBoostParamVal = getApplicationContext().getResources().getIntArray(
+                com.android.internal.R.array.mtpboost_param_value);
+
         synchronized (mBinder) {
             updateDisabledStateLocked();
             mStorageManager.registerListener(mStorageEventListener);
@@ -177,6 +186,11 @@ public class MtpService extends Service {
         if (mDatabase != null) {
             mDatabase.setServer(null);
         }
+        if (mIsPerfLockAcquired && mPerfBoost != null) {
+            mPerfBoost.perfLockRelease();
+            mIsPerfLockAcquired = false;
+            Log.d(TAG, "Perflock released for MTP ");
+        }
     }
 
     private final IMtpService.Stub mBinder =
@@ -237,6 +251,15 @@ public class MtpService extends Service {
         if (mServer != null) {
             mServer.addStorage(storage);
         }
+        if (mIsPerfBoostEnabled && mPerfBoost == null) {
+            mPerfBoost = new BoostFramework();
+        }
+        if (mPerfBoost != null && !mIsPerfLockAcquired) {
+            //Use big enough number here to hold the perflock for entire MTP session
+            mPerfBoost.perfLockAcquire(Integer.MAX_VALUE,mBoostParamVal);
+            Log.d(TAG, "perflock acquired for MTP ");
+            mIsPerfLockAcquired = true;
+        }
     }
 
     private void removeStorageLocked(StorageVolume volume) {
@@ -248,6 +271,11 @@ public class MtpService extends Service {
 
         Log.d(TAG, "Removing MTP storage " + Integer.toHexString(storage.getStorageId()) + " at "
                 + storage.getPath());
+        if (mIsPerfLockAcquired && mPerfBoost != null) {
+            mPerfBoost.perfLockRelease();
+            mIsPerfLockAcquired = false;
+            Log.d(TAG, "Perflock released for MTP ");
+        }
         if (mDatabase != null) {
             mDatabase.removeStorage(storage);
         }
